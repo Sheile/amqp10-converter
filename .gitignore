@@ -1,0 +1,11 @@
+.DS_Store
+.vscode
+.node-version
+npm-debug.log*
+node_modules/
+build/
+
+.env.local
+.env.*.local
+
+!.gitkeep
