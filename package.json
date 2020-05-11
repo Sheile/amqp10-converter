@@ -4,6 +4,7 @@
   "description": "a protocol converter between AMQP1.0 and FIWARE IoTagent-json",
   "main": "build/bundle.js",
   "scripts": {
+    "lint": "eslint src/**/*.ts",
     "build": "webpack",
     "build:production": "webpack --mode=production",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -12,6 +13,9 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^13.13.5",
+    "@typescript-eslint/eslint-plugin": "^2.31.0",
+    "@typescript-eslint/parser": "^2.31.0",
+    "eslint": "^7.0.0",
     "ts-loader": "^7.0.3",
     "tsconfig-paths-webpack-plugin": "^3.2.0",
     "typescript": "^3.8.3",
