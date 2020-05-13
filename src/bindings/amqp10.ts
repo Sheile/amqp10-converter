@@ -1,4 +1,6 @@
 import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message } from 'rhea-promise';
+import { sendAttributes } from '@/bindings/iotagent-json';
+import { Entity, DeviceMessage, MessageType } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
@@ -6,16 +8,6 @@ const username = process.env.AMQP_USERNAME || 'ANONYMOUS';
 const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
 const rawEntities = JSON.parse(process.env.ENTITIES || '[{"type":"type0","id":"id0"}]');
-const separator = process.env.AMQP_QUEUE_SEPARATOR || '.';
-
-class Entity {
-  constructor(private type: string, private id: string) {
-  }
-
-  get address(): string {
-    return `${this.type}${separator}${this.id}`;
-  }
-}
 
 export class Consumer {
   private connectionOptions: ConnectionOptions;
@@ -62,16 +54,39 @@ export class Consumer {
     this.entities.forEach(async (entity: Entity) => {
       const receiverOptions: ReceiverOptions = {
         source: {
-          address: entity.address,
+          address: entity.upstreamQueue,
         },
         autoaccept: false,
       };
       const receiver = await connection.createReceiver(receiverOptions);
       receiver.on(ReceiverEvents.message, (context: EventContext) => {
         if (context.message) {
-          const msg = this.messageBody2String(context.message);
-          console.log(`received message=${msg}`);
-          if (context.delivery) context.delivery.accept();
+          try {
+            const msg = this.messageBody2String(context.message);
+            console.log(`received message=${msg}`);
+            const deviceMessage = new DeviceMessage(msg);
+            switch (deviceMessage.messageType) {
+              case MessageType.attrs:
+                sendAttributes(entity, deviceMessage.data)
+                  .then(() => {
+                    console.log('sent attributes: %o', deviceMessage.data);
+                    context.delivery?.accept();
+                  })
+                  .catch((err) => {
+                    console.log('failed sending attributes', err);
+                    context.delivery?.release();
+                  })
+                break;
+              case MessageType.cmdexe:
+                context.delivery?.accept();
+                break;
+              default:
+                context.delivery?.reject();
+            }
+          } catch (err) {
+            console.error('failed when receiving message', err);
+            context.delivery?.reject();
+          }
         }
       });
     });
@@ -80,8 +95,8 @@ export class Consumer {
 
   private messageBody2String(message: Message): string {
     if (typeof message.body === 'string') return message.body;
-    if (message && message.body.content) return message.body.content.toString("utf-8");
-    if (message && Buffer.isBuffer(message.body)) return message.body.toString("utf8");
+    if (message.body && message.body.content) return message.body.content.toString("utf-8");
+    if (message.body && Buffer.isBuffer(message.body)) return message.body.toString("utf8");
     throw new Error('Unknown message format');
   }
 }
