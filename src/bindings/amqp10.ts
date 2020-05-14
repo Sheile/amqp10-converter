@@ -7,7 +7,7 @@ const port = parseInt(process.env.AMQP_PORT || '5672');
 const username = process.env.AMQP_USERNAME || 'ANONYMOUS';
 const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
-const rawEntities = JSON.parse(process.env.ENTITIES || '[{"type":"type0","id":"id0"}]');
+const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
 
 export class Consumer {
   private connectionOptions: ConnectionOptions;
@@ -28,6 +28,9 @@ export class Consumer {
     if (password) {
       this.connectionOptions.password = password;
     }
+
+    const rawEntities = JSON.parse(entitiesStr);
+    if (!this.isEntities(rawEntities)) throw new Error(`invalid ENTITIES (${entitiesStr})`);
 
     this.entities = rawEntities.map((e: {type: string; id: string}) => {
       return new Entity(e.type, e.id);
@@ -98,5 +101,9 @@ export class Consumer {
     if (message.body && message.body.content) return message.body.content.toString("utf-8");
     if (message.body && Buffer.isBuffer(message.body)) return message.body.toString("utf8");
     throw new Error('Unknown message format');
+  }
+
+  private isEntities(x: unknown): boolean {
+    return Array.isArray(x) && x.every(e => (typeof e === 'object') && 'type' in e && 'id' in e)
   }
 }
