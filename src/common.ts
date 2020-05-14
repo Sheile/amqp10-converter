@@ -7,6 +7,10 @@ export class Entity {
   get upstreamQueue(): string {
     return `${this.type}${separator}${this.id}${separator}up`;
   }
+
+  get downstreamQueue(): string {
+    return `${this.type}${separator}${this.id}${separator}down`;
+  }
 }
 
 type JsonPrimitive = boolean | number  | string  | null;

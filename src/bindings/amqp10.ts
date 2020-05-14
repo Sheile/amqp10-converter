@@ -1,6 +1,6 @@
-import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message } from 'rhea-promise';
+import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
 import { sendAttributes } from '@/bindings/iotagent-json';
-import { Entity, DeviceMessage, MessageType } from '@/common';
+import { Entity, DeviceMessage, MessageType, JsonType } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
@@ -9,9 +9,9 @@ const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
 const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
 
-export class Consumer {
-  private connectionOptions: ConnectionOptions;
-  private entities: Entity[];
+class AMQPBase {
+  protected connectionOptions: ConnectionOptions;
+  protected entities: Entity[];
 
   constructor() {
     this.connectionOptions = {
@@ -37,19 +37,22 @@ export class Consumer {
     });
   }
 
-  consume(cb: () => void): void {
-    this.connect()
-      .then(this.receive.bind(this))
-      .then(cb)
-      .catch((err) => {
-        console.error('error when starting AMQP consumer, %o', err);
-      })
-  }
-
-  private async connect(): Promise<Connection> {
+  protected async connect(): Promise<Connection> {
     const connection = new Connection(this.connectionOptions);
     await connection.open();
     return connection;
+  }
+
+  private isEntities(x: unknown): boolean {
+    return Array.isArray(x) && x.every(e => (typeof e === 'object') && 'type' in e && 'id' in e)
+  }
+}
+
+export class Consumer extends AMQPBase {
+  async consume(): Promise<string> {
+    const connection = await this.connect();
+    await this.receive(connection);
+    return `${host}:${port}`;
   }
 
   private async receive(connection: Connection): Promise<Receiver[]> {
@@ -102,8 +105,37 @@ export class Consumer {
     if (message.body && Buffer.isBuffer(message.body)) return message.body.toString("utf8");
     throw new Error('Unknown message format');
   }
+}
 
-  private isEntities(x: unknown): boolean {
-    return Array.isArray(x) && x.every(e => (typeof e === 'object') && 'type' in e && 'id' in e)
+export class Producer extends AMQPBase {
+  private connection: Connection | undefined;
+
+  async produce(entity: Entity, data: JsonType): Promise<number> {
+    const connection = await this.getConnection();
+    return await this.send(entity, data, connection);
+  }
+
+  private async getConnection(): Promise<Connection> {
+    if (!this.connection) {
+      this.connection = await this.connect();
+    }
+    return this.connection;
+  }
+
+  private async send(entity: Entity, data: JsonType, connection: Connection): Promise<number> {
+    const senderOptions: SenderOptions = {
+      target: {
+        address: entity.downstreamQueue,
+      }
+    };
+    const sender = await connection.createAwaitableSender(senderOptions);
+    const cmd: JsonType = {};
+    cmd[MessageType[MessageType.cmd]] = data
+    const msg = {
+      body: JSON.stringify(cmd)
+    };
+    const delivery = await sender.send(msg);
+    await sender.close();
+    return delivery.id;
   }
 }
