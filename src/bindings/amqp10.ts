@@ -1,5 +1,6 @@
 import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
 import { sendAttributes } from '@/bindings/iotagent-json';
+import { activate, setCommandResult } from '@/bindings/iotagent-lib';
 import { Entity, DeviceMessage, MessageType, JsonType } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
@@ -50,8 +51,10 @@ class AMQPBase {
 
 export class Consumer extends AMQPBase {
   async consume(): Promise<string> {
+
     const connection = await this.connect();
     await this.receive(connection);
+    await activate();
     return `${host}:${port}`;
   }
 
@@ -84,7 +87,15 @@ export class Consumer extends AMQPBase {
                   })
                 break;
               case MessageType.cmdexe:
-                context.delivery?.accept();
+                setCommandResult(entity, deviceMessage.data)
+                  .then(() => {
+                    console.log('sent command result: %o', deviceMessage.data);
+                    context.delivery?.accept();
+                  })
+                  .catch((err) => {
+                    console.log('failed sending command result', err);
+                    context.delivery?.release();
+                  })
                 break;
               default:
                 context.delivery?.reject();

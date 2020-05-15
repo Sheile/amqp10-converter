@@ -15,7 +15,7 @@ export class Entity {
 
 type JsonPrimitive = boolean | number  | string  | null;
 type JsonArray = JsonPrimitive[] | JsonObject[];
-type JsonObject = {
+export type JsonObject = {
   [key: string]: JsonPrimitive | JsonObject | JsonArray;
 };
 export type JsonType = JsonPrimitive | JsonArray | JsonObject;
@@ -34,4 +34,25 @@ export class DeviceMessage {
       this.data = rawJson[keys[0]];
     }
   }
+}
+
+export interface ServiceType {
+  _id: string;
+  resource: string;
+  apikey: string;
+  service: string;
+  subservice: string;
+  entity_type: string;
+}
+
+export interface DeviceType {
+  device_id: string;
+  service: string;
+  service_path: string;
+  entity_name: string;
+  entity_type: string;
+  attributes: JsonType;
+  lazy: JsonType;
+  commands: JsonType;
+  static_attributes: JsonType;
 }
