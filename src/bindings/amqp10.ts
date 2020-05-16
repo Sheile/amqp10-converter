@@ -1,4 +1,5 @@
 import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
+import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
 import { Entity, DeviceMessage, MessageType, JsonType } from '@/common';
@@ -9,6 +10,8 @@ const username = process.env.AMQP_USERNAME || 'ANONYMOUS';
 const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
 const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
+
+const logger = log4js.getLogger('amqp10');
 
 class AMQPBase {
   protected connectionOptions: ConnectionOptions;
@@ -44,13 +47,14 @@ class AMQPBase {
     if (!this.connection) {
       const c = new Connection(this.connectionOptions);
       await c.open();
+      logger.debug(`connected to ${host}:${port} ${(useTLS) ? 'with TLS': 'without TLS'}`);
       this.connection = c;
     }
     return this.connection;
   }
 
   protected async close(): Promise<void> {
-    if (this.connection) console.log(`close connection: id=${this.connection.id}`);
+    if (this.connection) logger.info(`close connection: id=${this.connection.id}`);
     await this.connection?.close();
   }
 
@@ -78,40 +82,42 @@ export class Consumer extends AMQPBase {
         autoaccept: false,
       };
       const receiver = await connection.createReceiver(receiverOptions);
+      logger.info(`consume message from Queue: ${entity.upstreamQueue}`);
       receiver.on(ReceiverEvents.message, (context: EventContext) => {
         if (context.message) {
           try {
             const msg = this.messageBody2String(context.message);
-            console.log(`received message=${msg}`);
+            logger.debug(`received message: ${msg}`);
             const deviceMessage = new DeviceMessage(msg);
             switch (deviceMessage.messageType) {
               case MessageType.attrs:
                 sendAttributes(entity, deviceMessage.data)
                   .then(() => {
-                    console.log('sent attributes: %o', deviceMessage.data);
+                    logger.debug('sent attributes: %o', deviceMessage.data);
                     context.delivery?.accept();
                   })
                   .catch((err) => {
-                    console.log('failed sending attributes', err);
+                    logger.error('failed sending attributes', err);
                     context.delivery?.release();
                   })
                 break;
               case MessageType.cmdexe:
                 setCommandResult(entity, deviceMessage.data)
                   .then(() => {
-                    console.log('sent command result: %o', deviceMessage.data);
+                    logger.debug('sent command result: %o', deviceMessage.data);
                     context.delivery?.accept();
                   })
                   .catch((err) => {
-                    console.log('failed sending command result', err);
+                    logger.error('failed sending command result', err);
                     context.delivery?.release();
                   })
                 break;
               default:
+                logger.warn('unhandled message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
                 context.delivery?.reject();
             }
           } catch (err) {
-            console.error('failed when receiving message', err);
+            logger.error('failed when receiving message', err);
             context.delivery?.reject();
           }
         }
@@ -123,7 +129,7 @@ export class Consumer extends AMQPBase {
   async close(): Promise<void> {
     await deactivate();
     this.receivers.forEach(async (r) => {
-      console.log(`close receiver: address=${r.address}`);
+      logger.info(`close receiver: address=${r.address}`);
       await r.close();
     });
     await super.close();
@@ -157,6 +163,7 @@ export class Producer extends AMQPBase {
       body: JSON.stringify(cmd)
     };
     const delivery = await sender.send(msg);
+    logger.debug('sent message to device:', msg);
     await sender.close();
     return delivery.id;
   }

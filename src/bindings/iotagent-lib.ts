@@ -1,6 +1,7 @@
+import * as iotagentLib from 'iotagent-node-lib';
+import log4js from 'log4js';
 import { getServices, getDevices } from '@/bindings/iotagent-json';
 import { Entity, JsonType, JsonObject, ServiceType, DeviceType } from '@/common';
-import * as iotagentLib from 'iotagent-node-lib';
 
 const host = process.env.IOTA_CB_HOST || 'localhost';
 const port = process.env.IOTA_CB_PORT || '1026';
@@ -8,6 +9,8 @@ const iotagentHost = process.env.IOTA_HOST || 'localhost';
 const iotagentManagePort = process.env.IOTA_MANAGE_PORT || '4041';
 const ngsiVersion = process.env.IOTA_CB_NGSI_VERSION || 'v2';
 const COMMAND_STATUS_COMPLETED = 'OK';
+
+const logger = log4js.getLogger('iotagent-lib');
 
 const config: iotagentLib.Config = {
   logLevel: 'INFO',
@@ -26,12 +29,12 @@ const config: iotagentLib.Config = {
 
 export const activate = async (): Promise<void> => {
   iotagentLib.activate(config, (err: unknown | undefined) => {
-    if (err) {
-      console.error('faild activating iotagent-node-lib', err);
-      Promise.reject(err);
-    } else {
-      console.log('activated iotagent-node-lib')
+    if (!err) {
+      logger.info('activated iotagent-node-lib')
       Promise.resolve();
+    } else {
+      logger.error('faild activating iotagent-node-lib', err);
+      Promise.reject(err);
     }
   });
 }
@@ -87,12 +90,12 @@ export const setCommandResult = async (entity: Entity, data: JsonType | undefine
 
 export const deactivate = async (): Promise<void> => {
   iotagentLib.deactivate((err: unknown | undefined) => {
-    if (err) {
-      console.error('failed deactivating iotagent-node-lib', err);
-      Promise.reject(err);
-    } else {
-      console.log('deactivated iotagent-node-lib')
+    if (!err) {
+      logger.info('deactivated iotagent-node-lib')
       Promise.resolve();
+    } else {
+      logger.error('failed deactivating iotagent-node-lib', err);
+      Promise.reject(err);
     }
   });
 }
