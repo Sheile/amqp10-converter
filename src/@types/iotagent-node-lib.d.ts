@@ -24,4 +24,5 @@ declare module 'iotagent-node-lib' {
     deviceInformation: { type: string; id: string; service: string; subservice: string; commands: unknown},
     callback: () => void,
   ): void;
+  export function deactivate(cb: (err: unknown | undefined) => void): void;
 }

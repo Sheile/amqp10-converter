@@ -1,6 +1,6 @@
 import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
 import { sendAttributes } from '@/bindings/iotagent-json';
-import { activate, setCommandResult } from '@/bindings/iotagent-lib';
+import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
 import { Entity, DeviceMessage, MessageType, JsonType } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
@@ -13,6 +13,8 @@ const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
 class AMQPBase {
   protected connectionOptions: ConnectionOptions;
   protected entities: Entity[];
+
+  private connection: Connection | undefined;
 
   constructor() {
     this.connectionOptions = {
@@ -38,10 +40,18 @@ class AMQPBase {
     });
   }
 
-  protected async connect(): Promise<Connection> {
-    const connection = new Connection(this.connectionOptions);
-    await connection.open();
-    return connection;
+  protected async getConnection(): Promise<Connection> {
+    if (!this.connection) {
+      const c = new Connection(this.connectionOptions);
+      await c.open();
+      this.connection = c;
+    }
+    return this.connection;
+  }
+
+  protected async close(): Promise<void> {
+    if (this.connection) console.log(`close connection: id=${this.connection.id}`);
+    await this.connection?.close();
   }
 
   private isEntities(x: unknown): boolean {
@@ -50,16 +60,16 @@ class AMQPBase {
 }
 
 export class Consumer extends AMQPBase {
-  async consume(): Promise<string> {
+  private receivers: Receiver[] = [];
 
-    const connection = await this.connect();
+  async consume(): Promise<string> {
+    const connection = await this.getConnection();
     await this.receive(connection);
     await activate();
     return `${host}:${port}`;
   }
 
-  private async receive(connection: Connection): Promise<Receiver[]> {
-    const receivers: Receiver[] = [];
+  private async receive(connection: Connection): Promise<void> {
     this.entities.forEach(async (entity: Entity) => {
       const receiverOptions: ReceiverOptions = {
         source: {
@@ -106,31 +116,32 @@ export class Consumer extends AMQPBase {
           }
         }
       });
+      this.receivers.push(receiver);
     });
-    return receivers;
+  }
+
+  async close(): Promise<void> {
+    await deactivate();
+    this.receivers.forEach(async (r) => {
+      console.log(`close receiver: address=${r.address}`);
+      await r.close();
+    });
+    await super.close();
   }
 
   private messageBody2String(message: Message): string {
     if (typeof message.body === 'string') return message.body;
     if (message.body && message.body.content) return message.body.content.toString("utf-8");
-    if (message.body && Buffer.isBuffer(message.body)) return message.body.toString("utf8");
+    if (message.body && Buffer.isBuffer(message.body)) return message.body.toString("utf-8");
     throw new Error('Unknown message format');
   }
 }
 
 export class Producer extends AMQPBase {
-  private connection: Connection | undefined;
 
   async produce(entity: Entity, data: JsonType): Promise<number> {
     const connection = await this.getConnection();
     return await this.send(entity, data, connection);
-  }
-
-  private async getConnection(): Promise<Connection> {
-    if (!this.connection) {
-      this.connection = await this.connect();
-    }
-    return this.connection;
   }
 
   private async send(entity: Entity, data: JsonType, connection: Connection): Promise<number> {
@@ -148,5 +159,9 @@ export class Producer extends AMQPBase {
     const delivery = await sender.send(msg);
     await sender.close();
     return delivery.id;
+  }
+
+  async close(): Promise<void> {
+    await super.close();
   }
 }

@@ -30,6 +30,7 @@ export const activate = async (): Promise<void> => {
       console.error('faild activating iotagent-node-lib', err);
       Promise.reject(err);
     } else {
+      console.log('activated iotagent-node-lib')
       Promise.resolve();
     }
   });
@@ -82,4 +83,16 @@ export const setCommandResult = async (entity: Entity, data: JsonType | undefine
   } else {
     Promise.reject('no data found');
   }
+}
+
+export const deactivate = async (): Promise<void> => {
+  iotagentLib.deactivate((err: unknown | undefined) => {
+    if (err) {
+      console.error('failed deactivating iotagent-node-lib', err);
+      Promise.reject(err);
+    } else {
+      console.log('deactivated iotagent-node-lib')
+      Promise.resolve();
+    }
+  });
 }
