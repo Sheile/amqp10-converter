@@ -28,10 +28,12 @@ export class DeviceMessage {
 
   constructor(rawMessage: string) {
     const rawJson = JSON.parse(rawMessage);
-    const keys = Object.keys(rawJson).filter((key) => key in MessageType);
-    if (keys.length > 0) {
-      this.messageType = MessageType[keys[0] as keyof typeof MessageType];
-      this.data = rawJson[keys[0]];
+    if (rawJson !== null && (typeof rawJson === 'object' || typeof rawJson === 'function') && !Array.isArray(rawJson)) {
+      const keys = Object.keys(rawJson).filter((key) => key in MessageType);
+      if (keys.length > 0) {
+        this.messageType = MessageType[keys[0] as keyof typeof MessageType];
+        this.data = rawJson[keys[0]];
+      }
     }
   }
 }
