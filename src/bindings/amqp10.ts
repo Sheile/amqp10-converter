@@ -13,11 +13,14 @@ const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
 
 const logger = log4js.getLogger('amqp10');
 
-class AMQPBase {
-  protected connectionOptions: ConnectionOptions;
-  protected entities: Entity[];
-
+export class AMQPBase {
+  private connectionOptions: ConnectionOptions;
   private connection: Connection | undefined;
+  private _entities: Entity[];
+
+  get entities(): Entity[] {
+    return this._entities;
+  }
 
   constructor() {
     this.connectionOptions = {
@@ -36,14 +39,17 @@ class AMQPBase {
     }
 
     const rawEntities = JSON.parse(entitiesStr);
-    if (!this.isEntities(rawEntities)) throw new Error(`invalid ENTITIES (${entitiesStr})`);
+    if (!this.isEntities(rawEntities)) {
+      logger.error(`invalid ENTITIES (${entitiesStr}`);
+      throw new Error(`invalid ENTITIES (${entitiesStr})`);
+    }
 
-    this.entities = rawEntities.map((e: {type: string; id: string}) => {
+    this._entities = rawEntities.map((e: {type: string; id: string}) => {
       return new Entity(e.type, e.id);
     });
   }
 
-  protected async getConnection(): Promise<Connection> {
+  async getConnection(): Promise<Connection> {
     if (!this.connection) {
       const c = new Connection(this.connectionOptions);
       await c.open();
@@ -53,7 +59,7 @@ class AMQPBase {
     return this.connection;
   }
 
-  protected async close(): Promise<void> {
+  async close(): Promise<void> {
     if (this.connection) logger.info(`close connection: id=${this.connection.id}`);
     await this.connection?.close();
   }
@@ -74,64 +80,71 @@ export class Consumer extends AMQPBase {
   }
 
   private async receive(connection: Connection): Promise<void> {
-    this.entities.forEach(async (entity: Entity) => {
-      const receiverOptions: ReceiverOptions = {
-        source: {
-          address: entity.upstreamQueue,
-        },
-        autoaccept: false,
-      };
-      const receiver = await connection.createReceiver(receiverOptions);
-      logger.info(`consume message from Queue: ${entity.upstreamQueue}`);
-      receiver.on(ReceiverEvents.message, (context: EventContext) => {
-        if (context.message) {
-          try {
-            const msg = this.messageBody2String(context.message);
-            logger.debug(`received message: ${msg}`);
-            const deviceMessage = new DeviceMessage(msg);
-            switch (deviceMessage.messageType) {
-              case MessageType.attrs:
-                sendAttributes(entity, deviceMessage.data)
-                  .then(() => {
-                    logger.debug('sent attributes: %o', deviceMessage.data);
-                    context.delivery?.accept();
-                  })
-                  .catch((err) => {
-                    logger.error('failed sending attributes', err);
-                    context.delivery?.release();
-                  })
-                break;
-              case MessageType.cmdexe:
-                setCommandResult(entity, deviceMessage.data)
-                  .then(() => {
-                    logger.debug('sent command result: %o', deviceMessage.data);
-                    context.delivery?.accept();
-                  })
-                  .catch((err) => {
-                    logger.error('failed sending command result', err);
-                    context.delivery?.release();
-                  })
-                break;
-              default:
-                logger.warn('unhandled message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
-                context.delivery?.reject();
-            }
-          } catch (err) {
-            logger.error('failed when receiving message', err);
-            context.delivery?.reject();
+    await Promise.all(this.entities.map(async (entity: Entity) => {
+      await this.createReceiver(connection, entity);
+    }));
+  }
+
+  private async createReceiver(connection: Connection, entity: Entity): Promise<void> {
+    const receiverOptions: ReceiverOptions = {
+      source: {
+        address: entity.upstreamQueue,
+      },
+      autoaccept: false,
+    };
+    const receiver = await connection.createReceiver(receiverOptions);
+    logger.info(`consume message from Queue: ${entity.upstreamQueue}`);
+    receiver.on(ReceiverEvents.message, (context: EventContext) => {
+      if (context.message) {
+        try {
+          const msg = this.messageBody2String(context.message);
+          logger.debug(`received message: ${msg}`);
+          const deviceMessage = new DeviceMessage(msg);
+          switch (deviceMessage.messageType) {
+            case MessageType.attrs:
+              sendAttributes(entity, deviceMessage.data)
+                .then(() => {
+                  logger.debug('sent attributes: %o', deviceMessage.data);
+                  context.delivery?.accept();
+                })
+                .catch((err) => {
+                  logger.error('failed sending attributes', err);
+                  context.delivery?.release();
+                })
+              break;
+            case MessageType.cmdexe:
+              setCommandResult(entity, deviceMessage.data)
+                .then(() => {
+                  logger.debug('sent command result: %o', deviceMessage.data);
+                  context.delivery?.accept();
+                })
+                .catch((err) => {
+                  logger.error('failed sending command result', err);
+                  context.delivery?.release();
+                })
+              break;
+            default:
+              logger.warn('unexpected message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
+              context.delivery?.reject();
           }
+        } catch (err) {
+          logger.error('failed when receiving message', err);
+          context.delivery?.reject();
         }
-      });
-      this.receivers.push(receiver);
+      } else {
+        logger.error('no message found in this context');
+        context.delivery?.reject();
+      }
     });
+    this.receivers.push(receiver);
   }
 
   async close(): Promise<void> {
     await deactivate();
-    this.receivers.forEach(async (r) => {
+    await Promise.all(this.receivers.map(async (r: Receiver) => {
       logger.info(`close receiver: address=${r.address}`);
       await r.close();
-    });
+    }));
     await super.close();
   }
 
