@@ -20,6 +20,8 @@ export type JsonObject = {
 };
 export type JsonType = JsonPrimitive | JsonArray | JsonObject;
 
+export const isObject = (x: unknown): boolean => x !== null && (typeof x === 'object' || typeof x === 'function');
+
 export enum MessageType { attrs, cmd, cmdexe }
 
 export class DeviceMessage {
@@ -28,7 +30,7 @@ export class DeviceMessage {
 
   constructor(rawMessage: string) {
     const rawJson = JSON.parse(rawMessage);
-    if (rawJson !== null && (typeof rawJson === 'object' || typeof rawJson === 'function') && !Array.isArray(rawJson)) {
+    if (isObject(rawJson) && !Array.isArray(rawJson)) {
       const keys = Object.keys(rawJson).filter((key) => key in MessageType);
       if (keys.length > 0) {
         this.messageType = MessageType[keys[0] as keyof typeof MessageType];

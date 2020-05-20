@@ -87,4 +87,32 @@ describe('common', () => {
       });
     });
   });
+
+  describe('isObject', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let common: any;
+    beforeEach(() => {
+      jest.isolateModules(() => {
+        common = require('@/common');
+      })
+    });
+
+    describe.each([
+      [{ a: 'A' }, true],
+      [{ a: 'A', b: [1, 2, 3] }, true],
+      [{}, true],
+      [[1, 2, 3], true],
+      [[], true],
+      ['a', false],
+      ['', false],
+      [1, false],
+      [true, false],
+      [null, false],
+      [undefined, false],
+    ])('when %o is given', (o, result) => {
+      it(`returns ${result}`, () => {
+        expect(common.isObject(o)).toBe(result);
+      });
+    })
+  });
 });

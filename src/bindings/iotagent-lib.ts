@@ -1,7 +1,7 @@
 import * as iotagentLib from 'iotagent-node-lib';
 import log4js from 'log4js';
 import { getServices, getDevices } from '@/bindings/iotagent-json';
-import { Entity, JsonType, JsonObject, ServiceType, DeviceType } from '@/common';
+import { Entity, JsonType, JsonObject, ServiceType, DeviceType, isObject } from '@/common';
 
 const host = process.env.IOTA_CB_HOST || 'localhost';
 const port = process.env.IOTA_CB_PORT || '1026';
@@ -28,13 +28,12 @@ const config: iotagentLib.Config = {
 };
 
 export const activate = async (): Promise<void> => {
-  iotagentLib.activate(config, (err: unknown | undefined) => {
+  iotagentLib.activate(config, (err?: unknown | undefined) => {
     if (!err) {
-      logger.info('activated iotagent-node-lib')
-      Promise.resolve();
+      logger.info('activated iotagent-node-lib');
     } else {
       logger.error('faild activating iotagent-node-lib', err);
-      Promise.reject(err);
+      throw err;
     }
   });
 }
@@ -69,33 +68,40 @@ const getDevice = async (entity: Entity): Promise<DeviceType> => {
 }
 
 export const setCommandResult = async (entity: Entity, data: JsonType | undefined): Promise<void> => {
-  if (data) {
+  if (isObject(data) && !Array.isArray(data)) {
     const service = await getService(entity);
     const device = await getDevice(entity);
-    const cmdName = Object.keys(data)[0];
+    const cmdName = Object.keys(data as JsonObject)[0];
     const cmdResult = (data as JsonObject)[cmdName];
+    if (!(cmdName && cmdResult)) {
+      throw new Error('empty data');
+    }
     iotagentLib.setCommandResult(device.entity_name, service.resource, service.apikey, cmdName, cmdResult, COMMAND_STATUS_COMPLETED, {
       type: entity.type,
       id: entity.id,
       service: service.service,
       subservice: service.subservice,
       commands: device.commands,
-    }, () => {
-      Promise.resolve();
+    }, (err?: unknown | undefined) => {
+      if (!err) {
+        logger.debug('called setCommandResult successfully');
+      } else {
+        logger.error('failed calling setCommandResult', err);
+        throw err;
+      }
     });
   } else {
-    Promise.reject('no data found');
+    throw new Error('no data found');
   }
 }
 
 export const deactivate = async (): Promise<void> => {
-  iotagentLib.deactivate((err: unknown | undefined) => {
+  iotagentLib.deactivate((err?: unknown | undefined) => {
     if (!err) {
       logger.info('deactivated iotagent-node-lib')
-      Promise.resolve();
     } else {
       logger.error('failed deactivating iotagent-node-lib', err);
-      Promise.reject(err);
+      throw err;
     }
   });
 }
