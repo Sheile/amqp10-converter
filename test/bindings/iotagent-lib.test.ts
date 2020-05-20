@@ -24,6 +24,14 @@ describe('/bindings/iotagent-lib', () => {
       ['orion.example.com', '21026', 'iot.example.com', '24041', 'v1'],
     ])('when enviroment variables is like this (IOTA_CB_HOST=%s, IOTA_CB_PORT=%s, IOTA_HOST=%s, IOTA_MANAGE_PORT=%s, IOTA_CB_NGSI_VERSION=%s',
     (cbHost, cbPort, iotaHost, iotaManagePort, ngsiVersion) => {
+      afterEach(() => {
+        if (cbHost !== null) delete process.env.IOTA_CB_HOST;
+        if (cbPort !== null) delete process.env.IOTA_CB_PORT;
+        if (iotaHost !== null) delete process.env.IOTA_HOST;
+        if (iotaManagePort !== null) delete process.env.IOTA_MANAGE_PORT;
+        if (ngsiVersion !== null) delete process.env.IOTA_CB_NGSI_VERSION;
+      });
+
       describe.each([
         [true, 'resolves when calling back iotagent-node-lib.activate without error'],
         [false, 'rejects when calling back iotagent-node-lib.activate with error'],

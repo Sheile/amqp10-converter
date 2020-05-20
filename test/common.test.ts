@@ -8,6 +8,10 @@ describe('common', () => {
       ['/', 't01', 'i01', 't01/i01/up', 't01/i01/down'],
       ['/', 't01', '', 't01//up', 't01//down'],
     ])('when AMQP_QUEUE_SEPARATOR environment variable is "%s"', (separator, type, id, upQueue, downQueue) => {
+      afterEach(() => {
+        if (separator != null) delete process.env.AMQP_QUEUE_SEPARATOR;
+      });
+
       it(`Entity(type=${type}, id=${id}).upstreamQueue = ${upQueue}, Entity(type=${type}, id=${id}).downstreamQueue = ${downQueue}`, () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let common: any;

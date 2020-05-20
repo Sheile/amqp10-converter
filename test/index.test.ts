@@ -56,17 +56,22 @@ describe('index', () => {
   });
 
   describe.each([
-    [undefined, undefined],
+    [null, null],
     ['5432', '/foobar'],
   ])('when starting [environment variables (PORT=%s, BASE_PATH=%s]', (port, basePath) => {
     describe.each([
       ['listener and consumer start gracefully when consumer.consume resolved', true],
       ['listener start gracefully, but consumer fails starting when consumer.consume rejected', false],
     ])('', (desc, isResolved) => {
+      afterEach(() => {
+        if (port !== null) delete process.env.PORT;
+        if (basePath !== null) delete process.env.BASE_PATH;
+      });
+
       it(desc, (done) => {
         jest.isolateModules(() => {
-          if (port) process.env.PORT = port;
-          if (basePath) process.env.BASE_PATH = basePath;
+          if (port !== null) process.env.PORT = port;
+          if (basePath !== null) process.env.BASE_PATH = basePath;
           mockConsumeFunc.mockReturnValue((async (): Promise<string> => {
             if (!isResolved) throw new Error('rejected!');
             return 'testurl';
