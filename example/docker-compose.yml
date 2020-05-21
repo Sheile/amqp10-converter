@@ -1,0 +1,60 @@
+version: '2'
+services:
+  mongo:
+    image: mongo:3.6
+    ports:
+      - "27017:27017"
+
+  orion:
+    image: fiware/orion:2.4.0
+    depends_on:
+      - mongo
+    ports:
+      - "1026:1026"
+    command: -dbhost mongo:27017 -logLevel DEBUG -dbTimeout 10000
+
+  iotagent-json:
+    image: fiware/iotagent-json:1.14.0
+    depends_on:
+      - mongo
+      - orion
+    ports:
+      - "4041:4041"
+      - "7896:7896"
+    environment:
+      - IOTA_CB_HOST=orion
+      - IOTA_CB_PORT=1026
+      - IOTA_CB_NGSI_VERSION=v2
+      - IOTA_AUTOCAST=true
+      - IOTA_TIMESTAMP=true
+      - IOTA_REGISTRY_TYPE=mongodb
+      - IOTA_MONGO_HOST=mongo
+      - IOTA_MONGO_PORT=27017
+      - IOTA_MONGO_DB=iotagentjson
+      - IOTA_NORTH_PORT=4041
+      - IOTA_PROVIDER_URL=http://iotagent-json:4041
+      - IOTA_HTTP_PORT=7896
+      - IOTA_LOG_LEVEL=DEBUG
+
+  amqp10-converter:
+    image: roboticbase/amqp10-converter:0.1.0
+    depends_on:
+      - orion
+      - iotagent-json
+    env_file: .env
+    environment:
+      - AMQP_HOST=${AMQP_HOST}
+      - AMQP_PORT=${AMQP_PORT}
+      - AMQP_USE_TLS=${AMQP_USE_TLS}
+      - AMQP_USERNAME=${AMQP_USERNAME}
+      - AMQP_PASSWORD=${AMQP_PASSWORD}
+      - IOTA_HOST=iotagent-json
+      - IOTA_MANAGE_PORT=4041
+      - IOTA_DATA_PORT=7896
+      - IOTA_CB_HOST=orion
+      - IOTA_CB_PORT=1026
+      - IOTA_CB_NGSI_VERSION=v2
+      - FIWARE_SERVICE=demoservice
+      - FIWARE_SERVICEPATH=/demo/path
+      - ENTITIES=[{"type":"robot","id":"robot01"}]
+      - LOG_LEVEL=DEBUG
