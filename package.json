@@ -1,12 +1,11 @@
 {
-  "name": "amqp10_converter",
+  "name": "amqp10-converter",
   "version": "0.1.0",
   "description": "a protocol converter between AMQP1.0 and FIWARE IoTagent-json",
   "main": "build/bundle.js",
   "scripts": {
     "lint": "eslint **/*.ts",
-    "server": "ts-node -r tsconfig-paths/register src/index.ts",
-    "server:dev": "ts-node-dev -r tsconfig-paths/register src/index.ts",
+    "server": "ts-node-dev -r tsconfig-paths/register src/index.ts",
     "build": "webpack",
     "build:production": "webpack --mode=production",
     "test": "jest --coverage",
