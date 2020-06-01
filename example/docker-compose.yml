@@ -1,26 +1,23 @@
-version: '2'
-services:
-  mongo:
-    image: mongo:3.6
-    ports:
-      - "27017:27017"
+version: '3'
 
+services:
   orion:
     image: fiware/orion:2.4.0
-    depends_on:
-      - mongo
     ports:
       - "1026:1026"
+    networks:
+      - fiware
     command: -dbhost mongo:27017 -logLevel DEBUG -dbTimeout 10000
 
   iotagent-json:
     image: fiware/iotagent-json:1.14.0
     depends_on:
-      - mongo
       - orion
     ports:
       - "4041:4041"
       - "7896:7896"
+    networks:
+      - fiware
     environment:
       - IOTA_CB_HOST=orion
       - IOTA_CB_PORT=1026
@@ -41,6 +38,8 @@ services:
     depends_on:
       - orion
       - iotagent-json
+    networks:
+      - fiware
     env_file: .env
     environment:
       - AMQP_HOST=${AMQP_HOST}
@@ -58,3 +57,8 @@ services:
       - FIWARE_SERVICEPATH=/demo/path
       - ENTITIES=[{"type":"robot","id":"robot01"}]
       - LOG_LEVEL=DEBUG
+
+networks:
+  fiware:
+    external:
+      name: example_fiware

@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  mongo:
+    image: mongo:3.6
+    ports:
+      - "27017:27017"
+    networks:
+      - fiware
+
+  activemq:
+    image: vromero/activemq-artemis:2.13.0
+    ports:
+      - "5672:5672"
+      - "8161:8161"
+    networks:
+      - fiware
+
+networks:
+  fiware:
