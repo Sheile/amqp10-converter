@@ -10,6 +10,7 @@ services:
 
   activemq:
     image: vromero/activemq-artemis:2.13.0
+    # image: rmohr/activemq:5.15.9-alpine
     ports:
       - "5672:5672"
       - "8161:8161"
