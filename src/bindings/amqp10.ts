@@ -13,9 +13,10 @@ const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
 
 const logger = log4js.getLogger('amqp10');
 
+let connection: Connection | undefined;
+
 export class AMQPBase {
   private connectionOptions: ConnectionOptions;
-  private connection: Connection | undefined;
   private _entities: Entity[];
 
   get entities(): Entity[] {
@@ -50,18 +51,18 @@ export class AMQPBase {
   }
 
   async getConnection(): Promise<Connection> {
-    if (!this.connection) {
+    if (!connection) {
       const c = new Connection(this.connectionOptions);
       await c.open();
       logger.debug(`connected to ${host}:${port} ${(useTLS) ? 'with TLS': 'without TLS'}`);
-      this.connection = c;
+      connection = c;
     }
-    return this.connection;
+    return connection;
   }
 
   async close(): Promise<void> {
-    if (this.connection) logger.info(`close connection: id=${this.connection.id}`);
-    await this.connection?.close();
+    if (connection) logger.info(`close connection: id=${connection.id}`);
+    await connection?.close();
   }
 
   private isEntities(x: unknown): boolean {
