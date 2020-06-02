@@ -7,19 +7,23 @@ const username = process.env.AMQP_SENDER_USERNAME || "ANONYMOUS"
 const password = process.env.AMQP_SENDER_PASSWORD
 const queue = process.env.AMQP_SEND_QUEUE || "examples"
 
-async function produce(payload) {
-  const connectionOptions = {
-    hostname: host,
-    host: host,
-    port: port,
-    username: username,
-    reconnect_limit: 100,
-  };
-  if (useTLS) {
-    connectionOptions.transport = "tls";
-  }
-  if (password) {
-    connectionOptions.password = password;
+async function produce(payload, connection) {
+  if (!connection) {
+    const connectionOptions = {
+      hostname: host,
+      host: host,
+      port: port,
+      username: username,
+      reconnect_limit: 100,
+    };
+    if (useTLS) {
+      connectionOptions.transport = "tls";
+    }
+    if (password) {
+      connectionOptions.password = password;
+    }
+    connection = new rhea.Connection(connectionOptions);
+    await connection.open();
   }
 
   const senderOptions = {
@@ -28,8 +32,6 @@ async function produce(payload) {
     },
   };
 
-  const connection = new rhea.Connection(connectionOptions);
-  await connection.open();
   const sender = await connection.createAwaitableSender(senderOptions);
   const message = {
     body: JSON.stringify(payload)
@@ -38,7 +40,6 @@ async function produce(payload) {
   console.log("msg", message);
   console.log("[%s] await sendMessage -> Delivery id: %d, settled: %s", connection.id, delivery.id, delivery.settled)
   await sender.close();
-  await connection.close();
 }
 
 module.exports = produce;

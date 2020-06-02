@@ -15,19 +15,23 @@ function messageBody2String(message) {
   return undefined;
 }
 
-async function consume(cb) {
-  const connectionOptions = {
-    hostname: host,
-    host: host,
-    port: port,
-    username: username,
-    reconnect_limit: 100,
-  };
-  if (useTLS) {
-    connectionOptions.transport = "tls";
-  }
-  if (password) {
-    connectionOptions.password = password;
+async function consume(cb, connection) {
+  if (!connection) {
+    const connectionOptions = {
+      hostname: host,
+      host: host,
+      port: port,
+      username: username,
+      reconnect_limit: 100,
+    };
+    if (useTLS) {
+      connectionOptions.transport = "tls";
+    }
+    if (password) {
+      connectionOptions.password = password;
+    }
+    connection = new rhea.Connection(connectionOptions);
+    await connection.open();
   }
 
   const receiverOptions = {
@@ -37,8 +41,6 @@ async function consume(cb) {
     autoaccept: false,
   };
 
-  const connection = new rhea.Connection(connectionOptions);
-  await connection.open();
   const receiver = await connection.createReceiver(receiverOptions);
   receiver.on(rhea.ReceiverEvents.message, async (context) => {
     cb(JSON.parse(messageBody2String(context.message)))

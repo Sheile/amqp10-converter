@@ -1,17 +1,28 @@
+const connect = require('./connect');
 const consume = require('./consume');
 const produce = require('./produce');
 
 async function attrs() {
+  let connection;
+  if (process.env.AMQP_SHARE_CONNECTION === 'true') {
+    connection = await connect();
+  }
+
   const temperature = 20 + (Math.random() * 15);
   const payload = {
     attrs: {
       temperature: temperature
     }
   };
-  await produce(payload);
+  await produce(payload, connection);
 }
 
 async function cmd() {
+  let connection;
+  if (process.env.AMQP_SHARE_CONNECTION === 'true') {
+    connection = await connect();
+  }
+
   await consume(async (msg) => {
     const cmdName = Object.keys(msg.cmd)[0];
     const payload = {
@@ -19,8 +30,8 @@ async function cmd() {
         [cmdName]: `processed ${msg.cmd[cmdName]}`
       }
     }
-    await produce(payload);
-  });
+    await produce(payload, connection);
+  }, connection);
 }
 
 if (process.argv.length <= 2) {
