@@ -91,13 +91,14 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
 1. send `temperature` from dummy client to "ActiveMQ Artemis".
 
     ```
-    $ docker run --env-file .env.client nmatsui/dummy-client:0.1.0 attrs
+    $ docker run --env-file .env.client my/dummy-client:0.1.0 attrs
     ```
     ```
     msg { body: '{"attrs":{"temperature":21.934956619788522}}' }
     [connection-1] await sendMessage -> Delivery id: 0, settled: true
     sent attributes successfully
     ```
+    * after the above messages are shown, press Ctrl-C to stop dummy client.
 1. the `temperature` attribute will be updated automatically by "amqp10-converter" and "IoTAgent JSON".
 
     ```
@@ -153,13 +154,14 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
 1. consume the `cmd` message from "ActiveMQ Artemis" and produce the `cmdexe` message to "ActiveMQ Artemis".
 
     ```
-    $ docker run --env-file .env.client nmatsui/dummy-client:0.1.0 cmd
+    $ docker run --env-file .env.client my/dummy-client:0.1.0 cmd
     ```
     ```
     start consuming cmd
     msg { body: '{"cmdexe":{"open":"processed window1"}}' }
     [connection-1] await sendMessage -> Delivery id: 0, settled: true
     ```
+    * after the above messages are shown, press Ctrl-C to stop dummy client.
 1. the status of `open` command will be updated as 'OK' automatically.
 
     ```
