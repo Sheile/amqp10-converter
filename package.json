@@ -37,6 +37,7 @@
     "webpack-cli": "^3.3.11"
   },
   "dependencies": {
+    "ajv": "^6.12.3",
     "axios": "^0.19.2",
     "express": "^4.17.1",
     "iotagent-node-lib": "^2.12.0",
