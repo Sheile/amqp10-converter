@@ -27,9 +27,11 @@ export enum MessageType { attrs, cmd, cmdexe }
 export class DeviceMessage {
   messageType: MessageType | undefined;
   data: JsonType | undefined;
+  rawJson: JsonType;
 
   constructor(rawMessage: string) {
     const rawJson = JSON.parse(rawMessage);
+    this.rawJson = rawJson;
     if (isObject(rawJson) && !Array.isArray(rawJson)) {
       const keys = Object.keys(rawJson).filter((key) => key in MessageType);
       if (keys.length > 0) {
