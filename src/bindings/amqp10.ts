@@ -86,6 +86,11 @@ export class Consumer extends AMQPBase {
     const ajv = Ajv();
     try {
       const rawSchemaPaths = JSON.parse(schemaPathsStr);
+      if (!Array.isArray(rawSchemaPaths)) {
+        logger.warn(`SCHEMA_PATHS (${schemaPathsStr}) is not array`);
+        this.validators = [];
+        return;
+      }
       this.validators = rawSchemaPaths.map((path: string) => {
         return ajv.compile(JSON.parse(readFileSync(path, 'utf-8')));
       });
@@ -94,6 +99,10 @@ export class Consumer extends AMQPBase {
       logger.warn('invalid SCHEMA_PATHS, so ignore it', err);
       this.validators = [];
     }
+  }
+
+  hasValidator(): boolean {
+    return this.validators.length > 0;
   }
 
   async consume(): Promise<string> {
@@ -124,8 +133,8 @@ export class Consumer extends AMQPBase {
           const msg = this.messageBody2String(context.message);
           logger.debug(`received message: ${msg}`);
           const deviceMessage = new DeviceMessage(msg);
-          const someValid = this.validators.length == 0 ? true : this.validators.some((validate) => validate(deviceMessage.rawJson));
-          if (!someValid) {
+          const valid = this.validators.length == 0 ? true : this.validators.some((validate) => validate(deviceMessage.rawJson));
+          if (!valid) {
             logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
             context.delivery?.reject();
           } else {
