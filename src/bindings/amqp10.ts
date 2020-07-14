@@ -1,4 +1,6 @@
+import { readFileSync } from 'fs';
 import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
+import Ajv from 'ajv';
 import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
@@ -10,6 +12,7 @@ const username = process.env.AMQP_USERNAME || 'ANONYMOUS';
 const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
 const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
+const schemaPathsStr = process.env.SCHEMA_PATHS || '[]';
 
 const logger = log4js.getLogger('amqp10');
 
@@ -72,6 +75,35 @@ export class AMQPBase {
 
 export class Consumer extends AMQPBase {
   private receivers: Receiver[] = [];
+  private validators: Function[] = [];
+
+  constructor() {
+    super();
+    this.createValidator();
+  }
+
+  private createValidator(): void {
+    const ajv = Ajv();
+    try {
+      const rawSchemaPaths = JSON.parse(schemaPathsStr);
+      if (!Array.isArray(rawSchemaPaths)) {
+        logger.warn(`SCHEMA_PATHS (${schemaPathsStr}) is not array`);
+        this.validators = [];
+        return;
+      }
+      this.validators = rawSchemaPaths.map((path: string) => {
+        return ajv.compile(JSON.parse(readFileSync(path, 'utf-8')));
+      });
+      logger.info(`create validators from ${schemaPathsStr}`);
+    } catch (err) {
+      logger.warn('invalid SCHEMA_PATHS, so ignore it', err);
+      this.validators = [];
+    }
+  }
+
+  hasValidator(): boolean {
+    return this.validators.length > 0;
+  }
 
   async consume(): Promise<string> {
     const connection = await this.getConnection();
@@ -101,32 +133,38 @@ export class Consumer extends AMQPBase {
           const msg = this.messageBody2String(context.message);
           logger.debug(`received message: ${msg}`);
           const deviceMessage = new DeviceMessage(msg);
-          switch (deviceMessage.messageType) {
-            case MessageType.attrs:
-              sendAttributes(entity, deviceMessage.data)
-                .then(() => {
-                  logger.debug('sent attributes: %o', deviceMessage.data);
-                  context.delivery?.accept();
-                })
-                .catch((err) => {
-                  logger.error('failed sending attributes', err);
-                  context.delivery?.release();
-                })
-              break;
-            case MessageType.cmdexe:
-              setCommandResult(entity, deviceMessage.data)
-                .then(() => {
-                  logger.debug('sent command result: %o', deviceMessage.data);
-                  context.delivery?.accept();
-                })
-                .catch((err) => {
-                  logger.error('failed sending command result', err);
-                  context.delivery?.release();
-                })
-              break;
-            default:
-              logger.warn('unexpected message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
-              context.delivery?.reject();
+          const valid = this.validators.length == 0 ? true : this.validators.some((validate) => validate(deviceMessage.rawJson));
+          if (!valid) {
+            logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
+            context.delivery?.reject();
+          } else {
+            switch (deviceMessage.messageType) {
+              case MessageType.attrs:
+                sendAttributes(entity, deviceMessage.data)
+                  .then(() => {
+                    logger.debug('sent attributes: %o', deviceMessage.data);
+                    context.delivery?.accept();
+                  })
+                  .catch((err) => {
+                    logger.error('failed sending attributes', err);
+                    context.delivery?.release();
+                  })
+                break;
+              case MessageType.cmdexe:
+                setCommandResult(entity, deviceMessage.data)
+                  .then(() => {
+                    logger.debug('sent command result: %o', deviceMessage.data);
+                    context.delivery?.accept();
+                  })
+                  .catch((err) => {
+                    logger.error('failed sending command result', err);
+                    context.delivery?.release();
+                  })
+                break;
+              default:
+                logger.warn('unexpected message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
+                context.delivery?.reject();
+            }
           }
         } catch (err) {
           logger.error('failed when receiving message', err);
