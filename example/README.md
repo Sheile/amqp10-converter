@@ -196,6 +196,9 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     ```
 1. confirm the log of `amqp10-converter` that "sent cmd to AMQP Server:" DEBUG message is shown.
 
+    ```
+    $ docker logs example_amqp10-converter_1
+    ```
     ```text
     ...
     2020-07-14T01:56:09.666-0000 [DEBUG] cmd - post /cmd/:type/:id { type: 'robot', id: 'robot01' } { open: 'window1' }
@@ -257,6 +260,9 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     ```
 1. confirm the log of `amqp10-converter` that "called setCommandResult successfully" DEBUG message is shown.
 
+    ```
+    $ docker logs example_amqp10-converter_1
+    ```
     ```text
     ...
     2020-07-14T02:00:12.452-0000 [DEBUG] amqp10 - received message: {"cmdexe":{"open":"processed window1"}}
@@ -287,6 +293,9 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     ```
 1. confirm the log of `amqp10-converter` that "no json schema matched this msg:" WARN message is shown.
 
+    ```
+    $ docker logs example_amqp10-converter_1
+    ```
     ```text
     ...
     2020-07-14T02:08:09.635-0000 [DEBUG] amqp10 - received message: {"dummy":"dummy"}
