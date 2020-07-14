@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["attrs"],
+  "properties": {
+    "attrs": {
+      "type": "object",
+      "required": ["temperature"],
+      "properties": {
+        "temperaturea": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

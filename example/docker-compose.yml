@@ -34,7 +34,7 @@ services:
       - IOTA_LOG_LEVEL=DEBUG
 
   amqp10-converter:
-    image: roboticbase/amqp10-converter:0.1.0
+    image: roboticbase/amqp10-converter:0.2.0
     depends_on:
       - orion
       - iotagent-json
@@ -56,7 +56,11 @@ services:
       - FIWARE_SERVICE=demoservice
       - FIWARE_SERVICEPATH=/demo/path
       - ENTITIES=[{"type":"robot","id":"robot01"}]
+      - SCHEMA_PATHS=["/opt/schema/attr.schema.json","/opt/schema/cmdexe.schema.json"]
       - LOG_LEVEL=DEBUG
+    volumes:
+      - ./schema/attr.schema.json:/opt/schema/attr.schema.json
+      - ./schema/cmdexe.schema.json:/opt/schema/cmdexe.schema.json
 
 networks:
   fiware:
