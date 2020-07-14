@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["cmdexe"],
+  "properties": {
+    "cmdexe": {
+      "type": "object",
+      "required": ["open"],
+      "properties": {
+        "open": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

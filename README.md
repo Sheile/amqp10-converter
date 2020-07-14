@@ -107,12 +107,30 @@ The Downstream Queue is used to send `cmd` message from FIWARE to device.
         }
         ```
 
+## Validation
+You can validate the upstream messages by using [json schema](https://json-schema.org/).
+If you want to validate upstream messages, please follow below steps:
+
+1. describe the definitions of the upstream messages as json schema.
+1. copy the json files to a directory which is accessible from `amqp10-converter`.
+1. set the file paths of the json files as a json array string to an environment variable `SCHEMA_PATHS` like below:
+
+    ```
+    $ export SCHEMA_PATHS='["/opt/schema/attr.schema.json","/opt/schema/cmdexe.schema.json"]'
+    ```
+1. start `amqp10-converter`.
+
+This converter will try to validate an arrived upstream message from the beginning of the given json shcema array. This process will stop at the first successful validation, and in which case the arrived upstream message is judged as VALID. Unfortunately if all validations fail, the arrived upstream message is rejected and all following processes are skipped.
+
+Therefore, if a ton of json schemas are given, they can cause the negative impact of performance.
+
 ## Requirements
 
 * [node](https://nodejs.org/en/) 12.16 or higher
 * [axios](https://www.npmjs.com/package/axios) 0.19.2
 * [express](https://www.npmjs.com/package/express) 4.17.1
 * [rhea-promise](https://www.npmjs.com/package/rhea-promise) 1.0.0
+* [ajv](https://ajv.js.org/) 6.12.3
 * [log4js](https://www.npmjs.com/package/log4js) 6.2.1
 * [iotagent-node-lib](https://www.npmjs.com/package/iotagent-node-lib) 2.12.0
 
@@ -136,6 +154,7 @@ This converter requires some environment variables like below:
 |`FIWARE_SERVICE`|fiware service of IoT device|YES||
 |`FIWARE_SERVICEPATH`|fiware servicepath of IoT device|YES|/|
 |`ENTITIES`|the list of entitieType and entityId corresponding to devices|YES|[{"type":"type0","id":"id0"}]|
+|`SCHEMA_PATHS`|the list of json schema filepath|NO|[]|
 |`PORT`|listen port of this service|No|3000|
 |`BASE_PATH`|the base path of this servicece|No|/amqp10|
 |`LOG_LEVEL`|log level(trace, debug, info, warn, error, fatal)|No|info|

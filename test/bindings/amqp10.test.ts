@@ -1,5 +1,7 @@
+import { writeFileSync } from 'fs';
 import { EventEmitter } from 'events';
 import { Connection, ConnectionOptions, ReceiverEvents } from 'rhea-promise';
+import { fileSync } from 'tmp-promise';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
 import { Entity } from '@/common';
@@ -816,6 +818,550 @@ describe('/bindigs/amqp10', () => {
           });
         });
       });
+
+      const attrSchema = {
+        type: "object",
+        required: ["attrs"],
+        properties: {
+          "attrs": {
+            type: "object",
+            required: ["temperature"],
+            properties: {
+              "temperaturea": {
+                type: "number"
+              }
+            }
+          }
+        }
+      };
+
+      const cmdexeSchema = {
+        type: "object",
+        required: ["cmdexe"],
+        properties: {
+          "cmdexe": {
+            type: "object",
+            required: ["open"],
+            properties: {
+              "open": {
+                type: "string"
+              }
+            }
+          }
+        }
+      }
+
+      const invalidSchema = {
+        type: "object",
+        required: ["dummy"],
+        properties: {
+          "dummy": {
+            type: "boolean"
+          }
+        }
+      }
+
+      describe.each([
+        [[]],
+        [['match']],
+        [['not match']],
+        [['match', 'match']],
+        [['match', 'not match']],
+        [['not match', 'match']],
+        [['not match', 'not match']],
+      ])('when json schemas ([%s]) are given', (schemas) => {
+        describe.each([
+          [{ body: '{"attrs":{"temperature":22.5}}'}],
+          [{ body: { content: Buffer.from('{"attrs":{"temperature":22.5}}')}}],
+          [{ body: Buffer.from('{"attrs":{"temperature":22.5}}')}],
+        ])('when receives attrs message (%o)', (rawMessage) => {
+          const cleanups: Function[] = [];
+
+          beforeEach(() => {
+            const paths = schemas.map((s) => {
+              const tmp = fileSync();
+              cleanups.push(tmp.removeCallback);
+              if (s === 'match') {
+                writeFileSync(tmp.fd, JSON.stringify(attrSchema));
+              } else {
+                writeFileSync(tmp.fd, JSON.stringify(invalidSchema));
+              }
+              return tmp.name;
+            });
+            process.env.SCHEMA_PATHS = JSON.stringify(paths);
+            process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+          });
+
+          afterEach(() => {
+            cleanups.forEach((c) => c());
+            delete process.env.SCHEMA_PATHS;
+            delete process.env.ENTITIES;
+          });
+
+          describe.each([
+            ['when context has delivery', true],
+            ['when context has no delivery', false],
+          ])('%s', (_, hasDelivery) => {
+            it(`matches the given schema? ${schemas.some((e) => e)}`, (done) => {
+              const receiver = new EventEmitter();
+              jest.isolateModules(() => {
+                connOpenMock.mockReturnValue(new Promise((resolve) => resolve()));
+                connCreateReceiverMock.mockReturnValue(new Promise((resolve) => resolve(receiver)));
+                activateMock.mockReturnValue(new Promise((resolve) => resolve()));
+                sendAttributesMock.mockReturnValue(new Promise((resolve) => resolve()));
+                amqp10 = require('@/bindings/amqp10');
+              });
+              const consumer = new amqp10.Consumer();
+              consumer.consume()
+                .then(() => {
+                  if (hasDelivery) {
+                    receiver.emit(ReceiverEvents.message, {
+                      message: rawMessage,
+                      delivery: {
+                        accept: deliveryAcceptMock,
+                        release: deliveryReleaseMock,
+                        reject: deliveryRejectMock,
+                      },
+                    });
+                  } else {
+                    receiver.emit(ReceiverEvents.message, { message: rawMessage });
+                  }
+                })
+              .catch(() => {
+                done.fail();
+              })
+              .finally(() => {
+                if (schemas.length == 0) {
+                  expect(consumer.hasValidator()).toBeFalsy();
+                } else {
+                  expect(consumer.hasValidator()).toBeTruthy();
+                }
+                if (schemas.length == 0 || schemas.some((s) => s === 'match')) {
+                  expect(sendAttributesMock).toHaveBeenCalledTimes(1);
+                  expect(setCommandResultMock).not.toHaveBeenCalled();
+                  expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
+                  expect(sendAttributesMock.mock.calls[0][1]).toMatchObject({ temperature: 22.5 });
+                  if (hasDelivery) {
+                    expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).not.toHaveBeenCalled();
+                  } else {
+                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).not.toHaveBeenCalled();
+                  }
+                } else {
+                  expect(sendAttributesMock).not.toHaveBeenCalled();
+                  expect(setCommandResultMock).not.toHaveBeenCalled();
+                  if (hasDelivery) {
+                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).toHaveBeenCalledTimes(1);
+                  } else {
+                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).not.toHaveBeenCalled();
+                  }
+                }
+                done();
+              });
+            });
+          });
+        });
+      });
+
+      describe.each([
+        [['broken']],
+        [['not found', 'broken']],
+        [['valid', 'not found']],
+        [['valid', 'not found', 'broken']],
+        [['valid', 'broken', 'not found']],
+        [['broken', 'valid']],
+        [['broken', 'valid', 'not found']],
+        [['brokern', 'broken']],
+        [['brokern', 'not found', 'broken']],
+      ])('when broken json schema (%s) is given', (schemas) => {
+        describe.each([
+          [{ body: '{"attrs":{"temperature":22.5}}'}],
+          [{ body: { content: Buffer.from('{"attrs":{"temperature":22.5}}')}}],
+          [{ body: Buffer.from('{"attrs":{"temperature":22.5}}')}],
+        ])('when receives attrs message (%o)', (rawMessage) => {
+          const cleanups: Function[] = [];
+
+          beforeEach(() => {
+            const paths = schemas.map((s) => {
+              if (s === 'not found') {
+                return '/path/not/found';
+              }
+              const tmp = fileSync();
+              cleanups.push(tmp.removeCallback);
+              if (s === 'valid') {
+                writeFileSync(tmp.fd, JSON.stringify(attrSchema));
+              } else {
+                writeFileSync(tmp.fd, '{"}}}');
+              }
+              return tmp.name;
+            });
+            process.env.SCHEMA_PATHS = JSON.stringify(paths);
+            process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+          });
+
+          afterEach(() => {
+            cleanups.forEach((c) => c());
+            delete process.env.SCHEMA_PATHS;
+            delete process.env.ENTITIES;
+          });
+
+          it(`matches the given schema? ${schemas.some((e) => e)}`, (done) => {
+            const receiver = new EventEmitter();
+            jest.isolateModules(() => {
+              connOpenMock.mockReturnValue(new Promise((resolve) => resolve()));
+              connCreateReceiverMock.mockReturnValue(new Promise((resolve) => resolve(receiver)));
+              activateMock.mockReturnValue(new Promise((resolve) => resolve()));
+              sendAttributesMock.mockReturnValue(new Promise((resolve) => resolve()));
+              amqp10 = require('@/bindings/amqp10');
+            });
+            const consumer = new amqp10.Consumer();
+            consumer.consume()
+              .then(() => {
+                receiver.emit(ReceiverEvents.message, {
+                  message: rawMessage,
+                  delivery: {
+                    accept: deliveryAcceptMock,
+                    release: deliveryReleaseMock,
+                    reject: deliveryRejectMock,
+                  },
+                });
+            })
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              expect(consumer.hasValidator()).toBeFalsy();
+              expect(sendAttributesMock).toHaveBeenCalledTimes(1);
+              expect(setCommandResultMock).not.toHaveBeenCalled();
+              expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
+              expect(sendAttributesMock.mock.calls[0][1]).toMatchObject({ temperature: 22.5 });
+              expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+              expect(deliveryReleaseMock).not.toHaveBeenCalled();
+              expect(deliveryRejectMock).not.toHaveBeenCalled();
+              done();
+            });
+          });
+        });
+      });
+
+      describe.each([
+        ['invalid'],
+        ['0'],
+        ['[}'],
+        ['{}'],
+      ])('when invalid or broken SCHEMA_PATHS (%s) is given', (schemaPathsStr) => {
+        describe.each([
+          [{ body: '{"attrs":{"temperature":22.5}}'}],
+          [{ body: { content: Buffer.from('{"attrs":{"temperature":22.5}}')}}],
+          [{ body: Buffer.from('{"attrs":{"temperature":22.5}}')}],
+        ])('when receives attrs message (%o)', (rawMessage) => {
+          beforeEach(() => {
+            process.env.SCHEMA_PATHS = schemaPathsStr;
+            process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+          });
+
+          afterEach(() => {
+            delete process.env.SCHEMA_PATHS;
+            delete process.env.ENTITIES;
+          });
+
+          it('processes without any validators', (done) => {
+            const receiver = new EventEmitter();
+            jest.isolateModules(() => {
+              connOpenMock.mockReturnValue(new Promise((resolve) => resolve()));
+              connCreateReceiverMock.mockReturnValue(new Promise((resolve) => resolve(receiver)));
+              activateMock.mockReturnValue(new Promise((resolve) => resolve()));
+              sendAttributesMock.mockReturnValue(new Promise((resolve) => resolve()));
+              amqp10 = require('@/bindings/amqp10');
+            });
+            const consumer = new amqp10.Consumer();
+            consumer.consume()
+              .then(() => {
+                receiver.emit(ReceiverEvents.message, {
+                  message: rawMessage,
+                  delivery: {
+                    accept: deliveryAcceptMock,
+                    release: deliveryReleaseMock,
+                    reject: deliveryRejectMock,
+                  },
+                });
+            })
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              expect(consumer.hasValidator()).toBeFalsy();
+              expect(sendAttributesMock).toHaveBeenCalledTimes(1);
+              expect(setCommandResultMock).not.toHaveBeenCalled();
+              expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
+              expect(sendAttributesMock.mock.calls[0][1]).toMatchObject({ temperature: 22.5 });
+              expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+              expect(deliveryReleaseMock).not.toHaveBeenCalled();
+              expect(deliveryRejectMock).not.toHaveBeenCalled();
+              done();
+            });
+          });
+        });
+      });
+
+      describe.each([
+        [[]],
+        [['match']],
+        [['not match']],
+        [['match', 'match']],
+        [['match', 'not match']],
+        [['not match', 'match']],
+        [['not match', 'not match']],
+      ])('when json schemas ([%s]) are given', (schemas) => {
+        describe.each([
+          [{ body: '{"cmdexe":{"open":"window1"}}'}],
+          [{ body: { content: Buffer.from('{"cmdexe":{"open":"window1"}}')}}],
+          [{ body: Buffer.from('{"cmdexe":{"open":"window1"}}')}],
+        ])('when receives cmdexe message (%o)', (rawMessage) => {
+          const cleanups: Function[] = [];
+
+          beforeEach(() => {
+            const paths = schemas.map((s) => {
+              const tmp = fileSync();
+              cleanups.push(tmp.removeCallback);
+              if (s === 'match') {
+                writeFileSync(tmp.fd, JSON.stringify(cmdexeSchema));
+              } else {
+                writeFileSync(tmp.fd, JSON.stringify(invalidSchema));
+              }
+              return tmp.name;
+            });
+            process.env.SCHEMA_PATHS = JSON.stringify(paths);
+            process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+          });
+
+          afterEach(() => {
+            cleanups.forEach((c) => c());
+            delete process.env.SCHEMA_PATHS;
+            delete process.env.ENTITIES;
+          });
+
+          describe.each([
+            ['when context has delivery', true],
+            ['when context has no delivery', false],
+          ])('%s', (_, hasDelivery) => {
+            it(`matches the given schema? ${schemas.some((e) => e)}`, (done) => {
+              const receiver = new EventEmitter();
+              jest.isolateModules(() => {
+                connOpenMock.mockReturnValue(new Promise((resolve) => resolve()));
+                connCreateReceiverMock.mockReturnValue(new Promise((resolve) => resolve(receiver)));
+                activateMock.mockReturnValue(new Promise((resolve) => resolve()));
+                setCommandResultMock.mockReturnValue(new Promise((resolve) => resolve()));
+                amqp10 = require('@/bindings/amqp10');
+              });
+              const consumer = new amqp10.Consumer();
+              consumer.consume()
+                .then(() => {
+                  if (hasDelivery) {
+                    receiver.emit(ReceiverEvents.message, {
+                      message: rawMessage,
+                      delivery: {
+                        accept: deliveryAcceptMock,
+                        release: deliveryReleaseMock,
+                        reject: deliveryRejectMock,
+                      },
+                    });
+                  } else {
+                    receiver.emit(ReceiverEvents.message, { message: rawMessage });
+                  }
+                })
+              .catch(() => {
+                done.fail();
+              })
+              .finally(() => {
+                if (schemas.length == 0) {
+                  expect(consumer.hasValidator()).toBeFalsy();
+                } else {
+                  expect(consumer.hasValidator()).toBeTruthy();
+                }
+                if (schemas.length == 0 || schemas.some((s) => s === 'match')) {
+                  expect(sendAttributesMock).not.toHaveBeenCalled();
+                  expect(setCommandResultMock).toHaveBeenCalledTimes(1);
+                  expect(setCommandResultMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
+                  expect(setCommandResultMock.mock.calls[0][1]).toMatchObject({ open: 'window1' });
+                  if (hasDelivery) {
+                    expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).not.toHaveBeenCalled();
+                  } else {
+                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).not.toHaveBeenCalled();
+                  }
+                } else {
+                  expect(sendAttributesMock).not.toHaveBeenCalled();
+                  expect(setCommandResultMock).not.toHaveBeenCalled();
+                  if (hasDelivery) {
+                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).toHaveBeenCalledTimes(1);
+                  } else {
+                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).not.toHaveBeenCalled();
+                  }
+                }
+                done();
+              });
+            });
+          });
+        });
+      });
+
+      describe.each([
+        [['broken']],
+        [['not found', 'broken']],
+        [['valid', 'not found']],
+        [['valid', 'not found', 'broken']],
+        [['valid', 'broken', 'not found']],
+        [['broken', 'valid']],
+        [['broken', 'valid', 'not found']],
+        [['brokern', 'broken']],
+        [['brokern', 'not found', 'broken']],
+      ])('when broken json schema (%s) is given', (schemas) => {
+        describe.each([
+          [{ body: '{"cmdexe":{"open":"window1"}}'}],
+          [{ body: { content: Buffer.from('{"cmdexe":{"open":"window1"}}')}}],
+          [{ body: Buffer.from('{"cmdexe":{"open":"window1"}}')}],
+        ])('when receives cmdexe message (%o)', (rawMessage) => {
+          const cleanups: Function[] = [];
+
+          beforeEach(() => {
+            const paths = schemas.map((s) => {
+              if (s === 'not found') {
+                return '/path/not/found';
+              }
+              const tmp = fileSync();
+              cleanups.push(tmp.removeCallback);
+              if (s === 'valid') {
+                writeFileSync(tmp.fd, JSON.stringify(cmdexeSchema));
+              } else {
+                writeFileSync(tmp.fd, '{"}}}');
+              }
+              return tmp.name;
+            });
+            process.env.SCHEMA_PATHS = JSON.stringify(paths);
+            process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+          });
+
+          afterEach(() => {
+            cleanups.forEach((c) => c());
+            delete process.env.SCHEMA_PATHS;
+            delete process.env.ENTITIES;
+          });
+
+          it(`matches the given schema? ${schemas.some((e) => e)}`, (done) => {
+            const receiver = new EventEmitter();
+            jest.isolateModules(() => {
+              connOpenMock.mockReturnValue(new Promise((resolve) => resolve()));
+              connCreateReceiverMock.mockReturnValue(new Promise((resolve) => resolve(receiver)));
+              activateMock.mockReturnValue(new Promise((resolve) => resolve()));
+              setCommandResultMock.mockReturnValue(new Promise((resolve) => resolve()));
+              amqp10 = require('@/bindings/amqp10');
+            });
+            const consumer = new amqp10.Consumer();
+            consumer.consume()
+              .then(() => {
+                receiver.emit(ReceiverEvents.message, {
+                  message: rawMessage,
+                  delivery: {
+                    accept: deliveryAcceptMock,
+                    release: deliveryReleaseMock,
+                    reject: deliveryRejectMock,
+                  },
+                });
+            })
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              expect(consumer.hasValidator()).toBeFalsy();
+              expect(sendAttributesMock).not.toHaveBeenCalledTimes(1);
+              expect(setCommandResultMock).toHaveBeenCalledTimes(1);
+              expect(setCommandResultMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
+              expect(setCommandResultMock.mock.calls[0][1]).toMatchObject({ open: 'window1' });
+              expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+              expect(deliveryReleaseMock).not.toHaveBeenCalled();
+              expect(deliveryRejectMock).not.toHaveBeenCalled();
+              done();
+            });
+          });
+        });
+      });
+
+      describe.each([
+        ['invalid'],
+        ['0'],
+        ['[}'],
+        ['{}'],
+      ])('when invalid or broken SCHEMA_PATHS (%s) is given', (schemaPathsStr) => {
+        describe.each([
+          [{ body: '{"cmdexe":{"open":"window1"}}'}],
+          [{ body: { content: Buffer.from('{"cmdexe":{"open":"window1"}}')}}],
+          [{ body: Buffer.from('{"cmdexe":{"open":"window1"}}')}],
+        ])('when receives cmdexe message (%o)', (rawMessage) => {
+          beforeEach(() => {
+            process.env.SCHEMA_PATHS = schemaPathsStr;
+            process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+          });
+
+          afterEach(() => {
+            delete process.env.SCHEMA_PATHS;
+            delete process.env.ENTITIES;
+          });
+
+          it('processes without any validators', (done) => {
+            const receiver = new EventEmitter();
+            jest.isolateModules(() => {
+              connOpenMock.mockReturnValue(new Promise((resolve) => resolve()));
+              connCreateReceiverMock.mockReturnValue(new Promise((resolve) => resolve(receiver)));
+              activateMock.mockReturnValue(new Promise((resolve) => resolve()));
+              sendAttributesMock.mockReturnValue(new Promise((resolve) => resolve()));
+              setCommandResultMock.mockReturnValue(new Promise((resolve) => resolve()));
+              amqp10 = require('@/bindings/amqp10');
+            });
+            const consumer = new amqp10.Consumer();
+            consumer.consume()
+              .then(() => {
+                receiver.emit(ReceiverEvents.message, {
+                  message: rawMessage,
+                  delivery: {
+                    accept: deliveryAcceptMock,
+                    release: deliveryReleaseMock,
+                    reject: deliveryRejectMock,
+                  },
+                });
+            })
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              expect(consumer.hasValidator()).toBeFalsy();
+              expect(sendAttributesMock).not.toHaveBeenCalledTimes(1);
+              expect(setCommandResultMock).toHaveBeenCalledTimes(1);
+              expect(setCommandResultMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
+              expect(setCommandResultMock.mock.calls[0][1]).toMatchObject({ open: 'window1' });
+              expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+              expect(deliveryReleaseMock).not.toHaveBeenCalled();
+              expect(deliveryRejectMock).not.toHaveBeenCalled();
+              done();
+            });
+          });
+        });
+      });
+
     });
 
     describe('Producer', () => {

@@ -34,8 +34,20 @@ async function cmd() {
   }, connection);
 }
 
+async function dummy() {
+  let connection;
+  if (process.env.AMQP_SHARE_CONNECTION === 'true') {
+    connection = await connect();
+  }
+
+  const payload = {
+    dummy: 'dummy'
+  };
+  await produce(payload, connection);
+}
+
 if (process.argv.length <= 2) {
-  console.log(`Usage: node main.js attrs|cmd`);
+  console.log(`Usage: node main.js attrs|cmd|dummy`);
   process.exit(1);
 }
 switch (process.argv[2]) {
@@ -51,6 +63,13 @@ switch (process.argv[2]) {
       console.log('start consuming cmd');
     }).catch((err) => {
       console.log('faild consuming cmd', err);
+    });
+    break;
+  case 'dummy':
+    dummy().then(() => {
+      console.log('sent dummy data successfully');
+    }).catch((err) => {
+      console.log('failed sending dummy data', err);
     });
     break;
   default:
