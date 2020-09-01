@@ -1,5 +1,5 @@
 describe('common', () => {
-  describe('Entity', () => {
+  describe('QueueDef', () => {
     describe.each([
       [null, 't01', 'i01', 't01.i01.up', 't01.i01.down'],
       [null, '', '', '..up', '..down'],
@@ -12,16 +12,16 @@ describe('common', () => {
         if (separator != null) delete process.env.AMQP_QUEUE_SEPARATOR;
       });
 
-      it(`Entity(type=${type}, id=${id}).upstreamQueue = ${upQueue}, Entity(type=${type}, id=${id}).downstreamQueue = ${downQueue}`, () => {
+      it(`QueueDef(type=${type}, id=${id}).upstreamQueue = ${upQueue}, Entity(type=${type}, id=${id}).downstreamQueue = ${downQueue}`, () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let common: any;
         jest.isolateModules(() => {
           if (separator != null) process.env.AMQP_QUEUE_SEPARATOR = separator;
           common = require('@/common');
         });
-        const entity = new common.Entity(type, id);
-        expect(entity.upstreamQueue).toBe(upQueue);
-        expect(entity.downstreamQueue).toBe(downQueue);
+        const queueDef = new common.QueueDef(type, id);
+        expect(queueDef.upstreamQueue).toBe(upQueue);
+        expect(queueDef.downstreamQueue).toBe(downQueue);
       });
     });
   });

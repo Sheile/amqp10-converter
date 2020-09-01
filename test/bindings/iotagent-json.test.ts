@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/camelcase */
 import axios from 'axios';
-import { Entity } from '@/common';
+import { QueueDef, Entity } from '@/common';
 
 jest.mock('axios');
 const getMock = axios.get as jest.Mock;
@@ -56,7 +56,8 @@ describe('/bindings/iotagent-json', () => {
             const type = 't01';
             const id = 'i01';
             const entity = new Entity(type, id);
-            iotaJson.sendAttributes(entity, data)
+            const queueDef = new QueueDef(type, id);
+            iotaJson.sendAttributes(queueDef, entity, data)
               .then((status: number) => {
                 if (!isResolved) done.fail();
                 expect(status).toBe(200);
@@ -172,7 +173,8 @@ describe('/bindings/iotagent-json', () => {
               }
               iotaJson = require('@/bindings/iotagent-json');
             });
-            iotaJson.getServices()
+            const queueDef = new QueueDef('t01', 'i01');
+            iotaJson.getServices(queueDef)
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .then((services: any) => {
                 if (!isResolved) done.fail();
@@ -283,7 +285,8 @@ describe('/bindings/iotagent-json', () => {
               }
               iotaJson = require('@/bindings/iotagent-json');
             });
-            iotaJson.getDevices()
+            const queueDef = new QueueDef('t01', 'i01');
+            iotaJson.getDevices(queueDef)
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .then((devices: any) => {
                 if (!isResolved) done.fail();

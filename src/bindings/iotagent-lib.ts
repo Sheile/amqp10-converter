@@ -1,7 +1,7 @@
 import * as iotagentLib from 'iotagent-node-lib';
 import log4js from 'log4js';
 import { getServices, getDevices } from '@/bindings/iotagent-json';
-import { Entity, JsonType, JsonObject, ServiceType, DeviceType, isObject } from '@/common';
+import { QueueDef, Entity, JsonType, JsonObject, ServiceType, DeviceType, isObject } from '@/common';
 
 const host = process.env.IOTA_CB_HOST || 'localhost';
 const port = process.env.IOTA_CB_PORT || '1026';
@@ -9,6 +9,7 @@ const iotagentHost = process.env.IOTA_HOST || 'localhost';
 const iotagentManagePort = process.env.IOTA_MANAGE_PORT || '4041';
 const ngsiVersion = process.env.IOTA_CB_NGSI_VERSION || 'v2';
 const COMMAND_STATUS_COMPLETED = 'OK';
+const idAttrName = process.env.ID_ATTR_NAME || '__id';
 
 const logger = log4js.getLogger('iotagent-lib');
 
@@ -39,9 +40,9 @@ export const activate = async (): Promise<void> => {
 }
 
 const serviceCache: { [type: string]: ServiceType } = {};
-const getService = async (entity: Entity): Promise<ServiceType> => {
+const getService = async (queueDef: QueueDef, entity: Entity): Promise<ServiceType> => {
   if (!serviceCache[entity.type]) {
-    const services = await getServices();
+    const services = await getServices(queueDef);
     const found = services.find((s) => s.entity_type === entity.type);
     if (!found) {
       throw new Error('no service found');
@@ -52,12 +53,12 @@ const getService = async (entity: Entity): Promise<ServiceType> => {
 }
 
 const deviceCache: { [type: string]: { [id: string]: DeviceType } } = {};
-const getDevice = async (entity: Entity): Promise<DeviceType> => {
+const getDevice = async (queueDef: QueueDef, entity: Entity): Promise<DeviceType> => {
   if (!deviceCache[entity.type]) {
     deviceCache[entity.type] = {};
   }
   if (!deviceCache[entity.type][entity.id]) {
-    const devices = await getDevices();
+    const devices = await getDevices(queueDef);
     const found = devices.find((d) => d.entity_type === entity.type && d.entity_name === entity.id);
     if (!found) {
       throw new Error('no device found');
@@ -67,11 +68,11 @@ const getDevice = async (entity: Entity): Promise<DeviceType> => {
   return deviceCache[entity.type][entity.id];
 }
 
-export const setCommandResult = async (entity: Entity, data: JsonType | undefined): Promise<void> => {
+export const setCommandResult = async (queueDef: QueueDef, entity: Entity, data: JsonType | undefined): Promise<void> => {
   if (isObject(data) && !Array.isArray(data)) {
-    const service = await getService(entity);
-    const device = await getDevice(entity);
-    const cmdName = Object.keys(data as JsonObject)[0];
+    const service = await getService(queueDef, entity);
+    const device = await getDevice(queueDef, entity);
+    const cmdName = Object.keys(data as JsonObject).filter(o => o !== idAttrName)[0];
     const cmdResult = (data as JsonObject)[cmdName];
     if (!(cmdName && cmdResult)) {
       throw new Error('empty data');

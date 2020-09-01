@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/camelcase */
 import { activate, setCommandResult, deactivate } from 'iotagent-node-lib';
 import { getServices, getDevices } from '@/bindings/iotagent-json';
-import { Entity, ServiceType, DeviceType, isObject } from '@/common';
+import { QueueDef, Entity, ServiceType, DeviceType, isObject } from '@/common';
 
 jest.mock('iotagent-node-lib');
 const activateMock = activate as jest.Mock;
@@ -147,7 +147,8 @@ describe('/bindings/iotagent-lib', () => {
     ])('when invalid data is given', (data, desc) => {
       it(`rejects data (${desc})`, (done) => {
         const entity = new Entity('t01', 'i01');
-        iotaLib.setCommandResult(entity, data)
+        const queueDef = new QueueDef('t01', 'i01');
+        iotaLib.setCommandResult(queueDef, entity, data)
           .then(() => {
             done.fail();
           })
@@ -168,7 +169,8 @@ describe('/bindings/iotagent-lib', () => {
     ])('when empty object is given', (data, desc) => {
       it(`rejects data (${desc})`, (done) => {
         const entity = new Entity('t01', 'i01');
-        iotaLib.setCommandResult(entity, data)
+        const queueDef = new QueueDef('t01', 'i01');
+        iotaLib.setCommandResult(queueDef, entity, data)
           .then(() => {
             done.fail();
           })
@@ -200,7 +202,8 @@ describe('/bindings/iotagent-lib', () => {
           });
 
           const entity = new Entity('t02', 'i02');
-          iotaLib.setCommandResult(entity, data)
+          const queueDef = new QueueDef('t01', 'i01');
+          iotaLib.setCommandResult(queueDef, entity, data)
             .then(() => {
               if (!isResolved) done.fail();
             })
@@ -231,7 +234,7 @@ describe('/bindings/iotagent-lib', () => {
 
               // call setCommandResult again
               // service and device is cached, so getServices and getDevices does not call again
-              iotaLib.setCommandResult(entity, data)
+              iotaLib.setCommandResult(queueDef, entity, data)
                 .then(() => {
                   if (!isResolved) done.fail();
                 })
@@ -257,7 +260,8 @@ describe('/bindings/iotagent-lib', () => {
       it(`rejects Entity(type=${type}, id=${id})`, (done) => {
         const data = { open: 'window1 opened' };
         const entity = new Entity(type, id);
-        iotaLib.setCommandResult(entity, data)
+        const queueDef = new QueueDef('t01', 'i01');
+        iotaLib.setCommandResult(queueDef, entity, data)
           .then(() => {
             done.fail();
           })
