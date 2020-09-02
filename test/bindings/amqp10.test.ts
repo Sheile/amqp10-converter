@@ -888,7 +888,7 @@ describe('/bindigs/amqp10', () => {
               }
               return tmp.name;
             });
-            process.env.SCHEMA_PATHS = JSON.stringify(paths);
+            process.env.SCHEMA_PATHS = JSON.stringify({'t01.i01.up': paths});
             process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
           });
 
@@ -932,9 +932,9 @@ describe('/bindigs/amqp10', () => {
               })
               .finally(() => {
                 if (schemas.length == 0) {
-                  expect(consumer.hasValidator()).toBeFalsy();
+                  expect(consumer.hasValidator('t01.i01.up')).toBeFalsy();
                 } else {
-                  expect(consumer.hasValidator()).toBeTruthy();
+                  expect(consumer.hasValidator('t01.i01.up')).toBeTruthy();
                 }
                 if (schemas.length == 0 || schemas.some((s) => s === 'match')) {
                   expect(sendAttributesMock).toHaveBeenCalledTimes(1);
@@ -1002,7 +1002,7 @@ describe('/bindigs/amqp10', () => {
               }
               return tmp.name;
             });
-            process.env.SCHEMA_PATHS = JSON.stringify(paths);
+            process.env.SCHEMA_PATHS = JSON.stringify({'t01.i01.up': paths});
             process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
           });
 
@@ -1037,7 +1037,7 @@ describe('/bindigs/amqp10', () => {
               done.fail();
             })
             .finally(() => {
-              expect(consumer.hasValidator()).toBeFalsy();
+              expect(consumer.hasValidator('t01.i01.up')).toBeFalsy();
               expect(sendAttributesMock).toHaveBeenCalledTimes(1);
               expect(setCommandResultMock).not.toHaveBeenCalled();
               expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
@@ -1097,7 +1097,7 @@ describe('/bindigs/amqp10', () => {
               done.fail();
             })
             .finally(() => {
-              expect(consumer.hasValidator()).toBeFalsy();
+              expect(consumer.hasValidator('t01.i01.up')).toBeFalsy();
               expect(sendAttributesMock).toHaveBeenCalledTimes(1);
               expect(setCommandResultMock).not.toHaveBeenCalled();
               expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
@@ -1138,7 +1138,7 @@ describe('/bindigs/amqp10', () => {
               }
               return tmp.name;
             });
-            process.env.SCHEMA_PATHS = JSON.stringify(paths);
+            process.env.SCHEMA_PATHS = JSON.stringify({'t01.i01.up': paths});
             process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
           });
 
@@ -1182,9 +1182,9 @@ describe('/bindigs/amqp10', () => {
               })
               .finally(() => {
                 if (schemas.length == 0) {
-                  expect(consumer.hasValidator()).toBeFalsy();
+                  expect(consumer.hasValidator('t01.i01.up')).toBeFalsy();
                 } else {
-                  expect(consumer.hasValidator()).toBeTruthy();
+                  expect(consumer.hasValidator('t01.i01.up')).toBeTruthy();
                 }
                 if (schemas.length == 0 || schemas.some((s) => s === 'match')) {
                   expect(sendAttributesMock).not.toHaveBeenCalled();
