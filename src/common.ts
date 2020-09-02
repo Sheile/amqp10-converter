@@ -10,10 +10,22 @@ export class QueueDef {
   constructor(public type: string, public id: string = '', public fiwareService: string = '', public fiwareServicePath: string = '') {
   }
 
+  private convertFiwareServicepath(fsp: string): string {
+    if (fsp.length == 0) return '';
+    return ((fsp[0] === '/') ? fsp.substr(1) : fsp).replace(/\//g, '-');
+  }
+
   private getBaseQueueName(): string {
     const fs = (this.fiwareService) ? this.fiwareService : fiwareService;
-    const fsp = (this.fiwareServicePath) ? this.fiwareServicePath : fiwareServicePath;
-    const queueName = (useFullyQualifiedQueueName) ? `${fs}${separator}${fsp}${separator}` : '';
+    const fsp = this.convertFiwareServicepath((this.fiwareServicePath) ? this.fiwareServicePath : fiwareServicePath);
+    let queueName = '';
+    if (useFullyQualifiedQueueName) {
+      queueName += fs;
+      if (fsp.length != 0) {
+        queueName += `${separator}${fsp}`
+      }
+      queueName += separator;
+    }
     return `${queueName}${this.type}`;
   }
 
