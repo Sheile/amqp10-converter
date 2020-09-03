@@ -1,10 +1,11 @@
 import { readFileSync } from 'fs';
 import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
 import Ajv from 'ajv';
+import { Liquid, Template } from 'liquidjs';
 import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
-import { Entity, DeviceMessage, MessageType, JsonType } from '@/common';
+import { Entity, DeviceMessage, MessageType, JsonType, isObject } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
@@ -13,6 +14,7 @@ const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
 const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
 const schemaPathsStr = process.env.SCHEMA_PATHS || '[]';
+const mappingPathsStr = process.env.MAPPING_PATHS || '{}';
 
 const logger = log4js.getLogger('amqp10');
 
@@ -76,10 +78,14 @@ export class AMQPBase {
 export class Consumer extends AMQPBase {
   private receivers: Receiver[] = [];
   private validators: Function[] = [];
+  private engine: Liquid;
+  private mappingPaths: {[s: string]: Template[]} | null = null;
 
   constructor() {
     super();
     this.createValidator();
+    this.engine = new Liquid();
+    this.createMappingPaths();
   }
 
   private createValidator(): void {
@@ -98,6 +104,25 @@ export class Consumer extends AMQPBase {
     } catch (err) {
       logger.warn('invalid SCHEMA_PATHS, so ignore it', err);
       this.validators = [];
+    }
+  }
+
+  private createMappingPaths(): void {
+    try {
+      const rawMappingPaths = JSON.parse(mappingPathsStr);
+      if (!isObject(rawMappingPaths)) {
+        logger.warn(`MAPPING_PATHS (${mappingPathsStr}) is not valid Object`);
+        this.mappingPaths = null;
+        return;
+      }
+      this.mappingPaths = Object.entries(rawMappingPaths).map(([k, v]) => {
+        return [k, this.engine.parseFileSync(v as string)];
+      })
+      .reduce((obj, [k, v]) => ({...obj, [String(k)]:v}), {});
+      logger.info(`create mappingPaths from ${mappingPathsStr}`);
+    } catch (err) {
+      logger.warn('invalid MAPPING_PATHS, so ignore it', err);
+      this.mappingPaths = null;
     }
   }
 
@@ -125,6 +150,10 @@ export class Consumer extends AMQPBase {
       },
       autoaccept: false,
     };
+
+    const template = (this.mappingPaths) ? this.mappingPaths[entity.upstreamQueue] : undefined;
+    logger.info(`the mapping template of ${entity.upstreamQueue} is ${(template) ? 'found' : 'not found'}`);
+
     const receiver = await connection.createReceiver(receiverOptions);
     logger.info(`consume message from Queue: ${entity.upstreamQueue}`);
     receiver.on(ReceiverEvents.message, (context: EventContext) => {
@@ -132,12 +161,15 @@ export class Consumer extends AMQPBase {
         try {
           const msg = this.messageBody2String(context.message);
           logger.debug(`received message: ${msg}`);
-          const deviceMessage = new DeviceMessage(msg);
-          const valid = this.validators.length == 0 ? true : this.validators.some((validate) => validate(deviceMessage.rawJson));
+          const parsed = JSON.parse(msg);
+          const valid = this.validators.length == 0 ? true : this.validators.some((validate) => validate(parsed));
           if (!valid) {
             logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
             context.delivery?.reject();
           } else {
+            const converted = (template) ? this.engine.renderSync(template, parsed) : msg;
+            logger.debug(`converted message: ${converted.replace(/\r?\n/g, '')}`);
+            const deviceMessage = new DeviceMessage(converted as string);
             switch (deviceMessage.messageType) {
               case MessageType.attrs:
                 sendAttributes(entity, deviceMessage.data)
