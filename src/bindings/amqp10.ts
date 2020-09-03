@@ -4,7 +4,7 @@ import Ajv from 'ajv';
 import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
-import { QueueDef, Entity, DeviceMessage, MessageType, JsonType } from '@/common';
+import { QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
@@ -13,7 +13,7 @@ const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
 const queueDefsStr = process.env.QUEUE_DEFS || '[{"type":"type0","id":"id0"}]';
 const upstreamDataModel = process.env.UPSTREAM_DATA_MODEL || 'dm-by-entity';
-const schemaPathsStr = process.env.SCHEMA_PATHS || '[]';
+const schemaPathsStr = process.env.SCHEMA_PATHS || '{}';
 
 const logger = log4js.getLogger('amqp10');
 
@@ -72,7 +72,7 @@ export class AMQPBase {
 
 export class Consumer extends AMQPBase {
   private receivers: Receiver[] = [];
-  private validators: Function[] = [];
+  private validatorPath: {[s: string]: Function[]} | null = null;
 
   constructor() {
     super();
@@ -83,23 +83,31 @@ export class Consumer extends AMQPBase {
     const ajv = Ajv();
     try {
       const rawSchemaPaths = JSON.parse(schemaPathsStr);
-      if (!Array.isArray(rawSchemaPaths)) {
-        logger.warn(`SCHEMA_PATHS (${schemaPathsStr}) is not array`);
-        this.validators = [];
+      if (!isObject(rawSchemaPaths)) {
+        logger.warn(`SCHEMA_PATHS (${schemaPathsStr}) is not valid Object`);
+        this.validatorPath = null;
         return;
       }
-      this.validators = rawSchemaPaths.map((path: string) => {
-        return ajv.compile(JSON.parse(readFileSync(path, 'utf-8')));
-      });
+      this.validatorPath = Object.entries(rawSchemaPaths).map(([k, v]) => {
+        if (!Array.isArray(v)) return [k, []];
+        return [k, v.map((path: string) => ajv.compile(JSON.parse(readFileSync(path, 'utf-8'))))];
+      })
+      .reduce((obj, [k, v]) => ({...obj, [String(k)]:v}), {});
       logger.info(`create validators from ${schemaPathsStr}`);
     } catch (err) {
       logger.warn('invalid SCHEMA_PATHS, so ignore it', err);
-      this.validators = [];
+      this.validatorPath = null;
     }
   }
 
-  hasValidator(): boolean {
-    return this.validators.length > 0;
+  hasValidator(path: string): boolean {
+    if (this.validatorPath == null) {
+      return false;
+    } else if (!this.validatorPath[path]) {
+      return false;
+    } else {
+      return this.validatorPath[path].length > 0;
+    }
   }
 
   async consume(): Promise<string> {
@@ -131,6 +139,12 @@ export class Consumer extends AMQPBase {
       },
       autoaccept: false,
     };
+
+    const validators: Function[] = (this.validatorPath) ? Object.entries(this.validatorPath).reduce((prev, current) => {
+      return (new RegExp(current[0]).test(queueDef.upstreamQueue)) ? ['', prev[1].concat(current[1])] : ['', prev[1]];
+    }, ['', []])[1] : [];
+    logger.info(`the number of validators (queue=${queueDef.upstreamQueue}) is ${validators.length}`);
+
     const receiver = await connection.createReceiver(receiverOptions);
     logger.info(`consume message from Queue: ${queueDef.upstreamQueue}`);
     receiver.on(ReceiverEvents.message, (context: EventContext) => {
@@ -139,7 +153,7 @@ export class Consumer extends AMQPBase {
           const msg = this.messageBody2String(context.message);
           logger.debug(`received message: ${msg}`);
           const deviceMessage = new DeviceMessage(msg);
-          const valid = this.validators.length == 0 ? true : this.validators.some((validate) => validate(deviceMessage.rawJson));
+          const valid = validators.length == 0 ? true : validators.some((validate) => validate(deviceMessage.rawJson));
           if (!valid) {
             logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
             context.delivery?.reject();
