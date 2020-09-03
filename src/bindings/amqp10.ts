@@ -4,14 +4,15 @@ import Ajv from 'ajv';
 import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
-import { Entity, DeviceMessage, MessageType, JsonType } from '@/common';
+import { QueueDef, Entity, DeviceMessage, MessageType, JsonType } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
 const username = process.env.AMQP_USERNAME || 'ANONYMOUS';
 const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
-const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
+const queueDefsStr = process.env.QUEUE_DEFS || '[{"type":"type0","id":"id0"}]';
+const upstreamDataModel = process.env.UPSTREAM_DATA_MODEL || 'dm-by-entity';
 const schemaPathsStr = process.env.SCHEMA_PATHS || '[]';
 
 const logger = log4js.getLogger('amqp10');
@@ -20,10 +21,10 @@ let connection: Connection | undefined;
 
 export class AMQPBase {
   private connectionOptions: ConnectionOptions;
-  private _entities: Entity[];
+  private _queueDefs: QueueDef[];
 
-  get entities(): Entity[] {
-    return this._entities;
+  get queueDefs(): QueueDef[] {
+    return this._queueDefs;
   }
 
   constructor() {
@@ -42,14 +43,14 @@ export class AMQPBase {
       this.connectionOptions.password = password;
     }
 
-    const rawEntities = JSON.parse(entitiesStr);
-    if (!this.isEntities(rawEntities)) {
-      logger.error(`invalid ENTITIES (${entitiesStr}`);
-      throw new Error(`invalid ENTITIES (${entitiesStr})`);
+    const rawQueueDefs = JSON.parse(queueDefsStr);
+    if (!QueueDef.isQueueDefs(rawQueueDefs)) {
+      logger.error(`invalid QUEUE_DEFS (${rawQueueDefs}`);
+      throw new Error(`invalid QUEUE_DEFS (${rawQueueDefs})`);
     }
 
-    this._entities = rawEntities.map((e: {type: string; id: string}) => {
-      return new Entity(e.type, e.id);
+    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined}) => {
+      return new QueueDef(e.type, e.id, e.fiwareService, e.fiwareServicePath);
     });
   }
 
@@ -66,10 +67,6 @@ export class AMQPBase {
   async close(): Promise<void> {
     if (connection) logger.info(`close connection: id=${connection.id}`);
     await connection?.close();
-  }
-
-  private isEntities(x: unknown): boolean {
-    return Array.isArray(x) && x.every(e => (typeof e === 'object') && 'type' in e && 'id' in e)
   }
 }
 
@@ -113,20 +110,29 @@ export class Consumer extends AMQPBase {
   }
 
   private async receive(connection: Connection): Promise<void> {
-    await Promise.all(this.entities.map(async (entity: Entity) => {
-      await this.createReceiver(connection, entity);
+    const DELIMITER = String.fromCharCode(31);
+    const makeKey = (o: QueueDef): string => {
+      let key = `${o.fiwareService}${DELIMITER}${o.fiwareServicePath}${DELIMITER}${o.type}`;
+      if (upstreamDataModel === 'dm-by-entity') {
+        key += `${DELIMITER}${o.id}`;
+      }
+      return  key;
+    };
+    const qd = Array.from(new Map(this.queueDefs.map(o => [makeKey(o), o])).values());
+    await Promise.all(qd.map(async (queueDef: QueueDef) => {
+      await this.createReceiver(connection, queueDef);
     }));
   }
 
-  private async createReceiver(connection: Connection, entity: Entity): Promise<void> {
+  private async createReceiver(connection: Connection, queueDef: QueueDef): Promise<void> {
     const receiverOptions: ReceiverOptions = {
       source: {
-        address: entity.upstreamQueue,
+        address: queueDef.upstreamQueue,
       },
       autoaccept: false,
     };
     const receiver = await connection.createReceiver(receiverOptions);
-    logger.info(`consume message from Queue: ${entity.upstreamQueue}`);
+    logger.info(`consume message from Queue: ${queueDef.upstreamQueue}`);
     receiver.on(ReceiverEvents.message, (context: EventContext) => {
       if (context.message) {
         try {
@@ -138,9 +144,11 @@ export class Consumer extends AMQPBase {
             logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
             context.delivery?.reject();
           } else {
+            const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
+                                                                       : new Entity(queueDef.type, queueDef.id);
             switch (deviceMessage.messageType) {
               case MessageType.attrs:
-                sendAttributes(entity, deviceMessage.data)
+                sendAttributes(queueDef, entity, deviceMessage.data)
                   .then(() => {
                     logger.debug('sent attributes: %o', deviceMessage.data);
                     context.delivery?.accept();
@@ -151,7 +159,7 @@ export class Consumer extends AMQPBase {
                   })
                 break;
               case MessageType.cmdexe:
-                setCommandResult(entity, deviceMessage.data)
+                setCommandResult(queueDef, entity, deviceMessage.data)
                   .then(() => {
                     logger.debug('sent command result: %o', deviceMessage.data);
                     context.delivery?.accept();
@@ -197,15 +205,15 @@ export class Consumer extends AMQPBase {
 
 export class Producer extends AMQPBase {
 
-  async produce(entity: Entity, data: JsonType): Promise<number> {
+  async produce(queueDef: QueueDef, data: JsonType): Promise<number> {
     const connection = await this.getConnection();
-    return await this.send(entity, data, connection);
+    return await this.send(queueDef, data, connection);
   }
 
-  private async send(entity: Entity, data: JsonType, connection: Connection): Promise<number> {
+  private async send(queueDef: QueueDef, data: JsonType, connection: Connection): Promise<number> {
     const senderOptions: SenderOptions = {
       target: {
-        address: entity.downstreamQueue,
+        address: queueDef.downstreamQueue,
       }
     };
     const sender = await connection.createAwaitableSender(senderOptions);

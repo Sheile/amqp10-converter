@@ -1,15 +1,61 @@
 const separator = process.env.AMQP_QUEUE_SEPARATOR || '.';
+const fiwareService = process.env.FIWARE_SERVICE || '';
+const fiwareServicePath = process.env.FIWARE_SERVICEPATH || '/';
+const idAttrName = process.env.ID_ATTR_NAME || '__id';
+const upstreamDataModel = process.env.UPSTREAM_DATA_MODEL || 'dm-by-entity';
+const downstreamDataModel = process.env.DOWNSTREAM_DATA_MODEL || 'dm-by-entity';
+const useFullyQualifiedQueueName = (process.env.USE_FULLY_QUALIFIED_QUEUE_NAME == 'true')
 
-export class Entity {
-  constructor(public type: string, public id: string) {
+export class QueueDef {
+  constructor(public type: string, public id: string = '', public fiwareService: string = '', public fiwareServicePath: string = '') {
+  }
+
+  private convertFiwareServicepath(fsp: string): string {
+    if (fsp.length == 0) return '';
+    return ((fsp[0] === '/') ? fsp.substr(1) : fsp).replace(/\//g, '-');
+  }
+
+  private getBaseQueueName(): string {
+    const fs = (this.fiwareService) ? this.fiwareService : fiwareService;
+    const fsp = this.convertFiwareServicepath((this.fiwareServicePath) ? this.fiwareServicePath : fiwareServicePath);
+    let queueName = '';
+    if (useFullyQualifiedQueueName) {
+      queueName += fs;
+      if (fsp.length != 0) {
+        queueName += `${separator}${fsp}`
+      }
+      queueName += separator;
+    }
+    return `${queueName}${this.type}`;
   }
 
   get upstreamQueue(): string {
-    return `${this.type}${separator}${this.id}${separator}up`;
+    const idstr = (upstreamDataModel === 'dm-by-entity') ? `${separator}${this.id}` : '';
+    return `${this.getBaseQueueName()}${idstr}${separator}up`;
   }
 
   get downstreamQueue(): string {
-    return `${this.type}${separator}${this.id}${separator}down`;
+    const idstr = (downstreamDataModel === 'dm-by-entity') ? `${separator}${this.id}` : '';
+    return `${this.getBaseQueueName()}${idstr}${separator}down`;
+  }
+
+  static isQueueDefs(x: unknown): boolean {
+    return Array.isArray(x) && x.every(e => (typeof e === 'object') && 'type' in e);
+  }
+}
+
+export class Entity {
+  constructor(public type: string, public id: string) {}
+  static fromData(queueDef: QueueDef, data: JsonType | undefined): Entity {
+    let id = queueDef.id;
+    if (data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = data as any;
+      if (idAttrName in d) {
+        id = d[idAttrName];
+      }
+    }
+    return new this(queueDef.type, id);
   }
 }
 
