@@ -11,7 +11,6 @@ export class QueueDef {
   }
 
   private convertFiwareServicepath(fsp: string): string {
-    if (fsp.length == 0) return '';
     return ((fsp[0] === '/') ? fsp.substr(1) : fsp).replace(/\//g, '-');
   }
 
