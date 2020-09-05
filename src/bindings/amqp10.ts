@@ -103,14 +103,10 @@ export class Consumer extends AMQPBase {
     }
   }
 
-  hasValidator(path: string): boolean {
-    if (this.validatorPath == null) {
-      return false;
-    } else if (!this.validatorPath[path]) {
-      return false;
-    } else {
-      return this.validatorPath[path].length > 0;
-    }
+  getValidators(queueName: string): Function[] {
+    return (this.validatorPath) ? Object.entries(this.validatorPath).reduce((prev, current) => {
+      return (new RegExp(current[0]).test(queueName)) ? ['', prev[1].concat(current[1])] : ['', prev[1]];
+    }, ['', []])[1] : [];
   }
 
   async consume(): Promise<string> {
@@ -134,9 +130,7 @@ export class Consumer extends AMQPBase {
       autoaccept: false,
     };
 
-    const validators: Function[] = (this.validatorPath) ? Object.entries(this.validatorPath).reduce((prev, current) => {
-      return (new RegExp(current[0]).test(entity.upstreamQueue)) ? ['', prev[1].concat(current[1])] : ['', prev[1]];
-    }, ['', []])[1] : [];
+    const validators: Function[] = this.getValidators(entity.upstreamQueue);
     logger.info(`the number of validators (queue=${entity.upstreamQueue}) is ${validators.length}`);
 
     const receiver = await connection.createReceiver(receiverOptions);
