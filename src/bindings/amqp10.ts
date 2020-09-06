@@ -110,15 +110,7 @@ export class Consumer extends AMQPBase {
   }
 
   private async receive(connection: Connection): Promise<void> {
-    const DELIMITER = String.fromCharCode(31);
-    const makeKey = (o: QueueDef): string => {
-      let key = `${o.fiwareService}${DELIMITER}${o.fiwareServicePath}${DELIMITER}${o.type}`;
-      if (upstreamDataModel === 'dm-by-entity') {
-        key += `${DELIMITER}${o.id}`;
-      }
-      return  key;
-    };
-    const qd = Array.from(new Map(this.queueDefs.map(o => [makeKey(o), o])).values());
+    const qd = Array.from(new Map(this.queueDefs.map(o => [o.upstreamQueue, o])).values());
     await Promise.all(qd.map(async (queueDef: QueueDef) => {
       await this.createReceiver(connection, queueDef);
     }));
