@@ -34,7 +34,7 @@ services:
       - IOTA_LOG_LEVEL=DEBUG
 
   amqp10-converter:
-    image: roboticbase/amqp10-converter:0.3.0
+    image: roboticbase/amqp10-converter:0.3.0.1
     depends_on:
       - orion
       - iotagent-json
