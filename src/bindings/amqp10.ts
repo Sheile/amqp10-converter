@@ -106,14 +106,10 @@ export class Consumer extends AMQPBase {
     }
   }
 
-  hasValidator(path: string): boolean {
-    if (this.validatorPath == null) {
-      return false;
-    } else if (!this.validatorPath[path]) {
-      return false;
-    } else {
-      return this.validatorPath[path].length > 0;
-    }
+  getValidators(queueName: string): Function[] {
+    return (this.validatorPath) ? Object.entries(this.validatorPath).reduce((prev, current) => {
+      return (new RegExp(current[0]).test(queueName)) ? ['', prev[1].concat(current[1])] : ['', prev[1]];
+    }, ['', []])[1] : [];
   }
 
   private createMappingPaths(): void {
@@ -157,9 +153,7 @@ export class Consumer extends AMQPBase {
       autoaccept: false,
     };
 
-    const validators: Function[] = (this.validatorPath) ? Object.entries(this.validatorPath).reduce((prev, current) => {
-      return (new RegExp(current[0]).test(queueDef.upstreamQueue)) ? ['', prev[1].concat(current[1])] : ['', prev[1]];
-    }, ['', []])[1] : [];
+    const validators: Function[] = this.getValidators(queueDef.upstreamQueue);
     logger.info(`the number of validators (queue=${queueDef.upstreamQueue}) is ${validators.length}`);
 
     const template = (this.mappingPaths) ? this.mappingPaths[queueDef.upstreamQueue] : undefined;
