@@ -14,13 +14,14 @@ This converter is designed to be a bridge between [AMQP 1.0](http://www.amqp.org
 This converter is based on the [FIWARE IoTAgent JSON](https://github.com/telefonicaid/iotagent-json) and the [IoT Agent Node.js Library](https://github.com/telefonicaid/iotagent-node-lib). Further general information about the FIWARE IoT Agents framework, its architecture and the common interaction model can be found in their GitHub repositories.
 
 ## Background
-In the Cloud-Native Era, the Cloud-Managed Services have become more useful, more powerful and more desiaalbe. But unfortunately, Cloud-Managed Message Queue Service such as [Microsoft Azure ServiceBus](https://azure.microsoft.com/en-us/services/service-bus/) or [AWS Amazon MQ](https://aws.amazon.com/amazon-mq/) can not handle AMQP 0.9.1 supported by FIWARE IoT Agent.
+In the Cloud-Native Era, the Cloud-Managed Services have become more useful, more powerful and more desiaalbe. But unfortunately, Cloud-Managed Message Queue Service such as [Microsoft Azure ServiceBus](https://azure.microsoft.com/en-us/services/service-bus/) or [AWS Amazon MQ](https://aws.amazon.com/amazon-mq/) can not handle AMQP 0.9.1 supported by FIWARE IoT Agent.  
 Therefore this converter was developed to bridge bewteen Cloud-Managed Message Queue Service and FIWARE IoTAgent using AMQP 1.0.
 
 An example is available to try this converter using docker-compose. Please see [example/README.md](example/README.md).
 
-## Caution
-Unlike FIWARE IotAgent, **this converter cannot create required Queues corresponding to device Entities automatically** because AMQP 1.0 does not define the APIs for manage Queues. Therefore you have to create the required Queues by yourself **before** starting this converter.
+## CAUTION
+* Unlike FIWARE IotAgent, **this converter cannot create required Queues corresponding to device Entities automatically** because AMQP 1.0 does not define the APIs for manage Queues. Therefore you have to create the required Queues by yourself **before** starting this converter.
+* The environment variables of current version (0.3.0) has **lost the backward compatibility** to 0.2.0. Please update your environment if you use 0.2.0.
 
 ## Naming and Formatting
 ### Endpoint
@@ -29,16 +30,50 @@ The endpoint listening the POST request from IoTAgent JSON is like this: `http:/
 The default value of `<basePath>` is "/amqp10", but you can change this by using `BASE_PATH` environment variable if you want.
 
 ### Queue Name
-This converter requires two Queues: the one is **Upstream Queue** and the other is **Downstream Queue**.
+This converter requires two or more Queues: the one is **Upstream Queue** and the other is **Downstream Queue**.
 
-The following table shows the queue names:
+These Queue Name depends on the following environment variables:
 
-|direction|queue name|
-|:--|:--|
-|Upstream|`<entityType>.<entityId>.up`|
-|Downstream|`<entityType>.<entityId>.down`|
+|environment variable|description|default value|
+|:--|:--|:--|
+|`FIWARE_SERVICE`|the default value of FIWARE-SERVICE|''|
+|`FIWARE_SERVICEPATH`|the default value of FIWARE-SERVICEPATH|'/'|
+|`QUEUE_DEFS`|the queue definitions like `[{"type":"robot","id":"robot01"},{"type":"robot","id":"robot02"}]` or `[{"type":"robot","fiwareService":"demoservice","fiwareServicePath":"/demo/path"}]`|`[{"type":"type0","id":"id0"}]`|
+|`USE_FULLY_QUALIFIED_QUEUE_NAME`|if `true`, FIWARE-SERVICE and FIWARE-SERVICEPATH are included in the Queue Name|`undefined`|
+|`AMQP_QUEUE_SEPARATOR`|the separator of the Queue Name|`.`|
 
-The default separator is ".", but you can change this by using `AMQP_QUEUE_SEPARATOR` environment variable if you want.
+When FIWARE-SERVICEPATH is included in the Queue Name, it is converted like below:
+
+1. remove the first "/" if exists.
+1. replace "/" to "-".
+1. if converted FIWARE-SERVICEPATH becomes empty string, it will be ignored in the Queue Name.
+
+#### Upstream Queue
+The Upstream Qureue Name depends on the foloowing environment variables in addition to the above variables:
+
+|environment variable|description|default value|
+|:--|:--|:--|
+|`UPSTREAM_DATA_MODEL`|if `dm-by-entity`, the `entityId` is included in the Queue Name. if `dm-by-entity-type`, the `entityId` is not included in the QueueName.|`dm-by-entity`|
+
+The following table shows some example of the Upstream Queue Name:
+
+|`FIWARE_SERVICE`|`FIWARE_SERVICEPATH`|`USE_FULLY_QUALIFIED_QUEUE_NAME`|`UPSTREAM_DATA_MODEL`|`QUEUE_DEFS`|Upstream Queue Name|
+|:--|:--|:--|:--|:--|:--|
+|`fs`|`/fsp`|`false`|`dm-by-entity`|`[{"type":"type0","id":"id0"}]`|`type0.id0.up`|
+|`fs`|`/fsp`|`false`|`dm-by-entity-type`|`[{"type":"type0","id":"id0"}]`|`type0.up`|
+|`fs`|`/fsp`|`true`|`dm-by-entity`|`[{"type":"type0","id":"id0"}]`|`fs.fsp.type0.id0.up`|
+|`fs`|`/fsp`|`true`|`dm-by-entity-type`|`[{"type":"type0","id":"id0"}]`|`fs.fsp.type0.up`|
+|`fs`|`/fsp`|`true`|`dm-by-entity`|`[{"type":"type0","id":"id0","fiwareService":"demo","fiwareServicePath":"/demo/path"}]`|`demo.demo-path.type0.id0.up`|
+|`fs`|`/fsp`|`true`|`dm-by-entity-type`|`[{"type":"type0","fiwareService":"demo","fiwareServicePath":"/demo/path"}]`|`demo.demo-path.type0.up`|
+
+#### Downsrream Queue
+The following table shows some example of the Downstream Queue Name:
+
+|`FIWARE_SERVICE`|`FIWARE_SERVICEPATH`|`USE_FULLY_QUALIFIED_QUEUE_NAME`|`QUEUE_DEFS`|Downstream Queue Name|
+|:--|:--|:--|:--|:--|
+|`fs`|`/fsp`|`false`|`[{"type":"type0","id":"id0"}]`|`type0.id0.down`|
+|`fs`|`/fsp`|`true`|`[{"type":"type0","id":"id0"}]`|`fs.fsp.type0.id0.down`|
+|`fs`|`/fsp`|`true`|`[{"type":"type0","id":"id0","fiwareService":"demo","fiwareServicePath":"/demo/path"}]`|`demo.demo-path.type0.id0.down`|
 
 ### Message Format
 This converter requires the following message format:
@@ -87,6 +122,32 @@ The Upstream Queue is used to send `attrs` or `cmdexe` messages from device to F
         }
         ```
 
+When you use `dm-by-entity-type` as `UPSTREAM_DATA_MODEL`, you have to set the value of `entityId` in the message body.  
+The default key of `entityId` is `__id`, but you can change this key name by using `ID_ATTR_NAME`.
+
+* the `attrs` message which includes `entityId`
+    * example:
+
+        ```json
+        {
+          "attrs": {
+            "__id": "id0",
+            "temperature": 25.4
+          }
+        }
+        ```
+* the `cmdexe` message which includes `entityId`
+    * example:
+
+        ```json
+        {
+          "cmdexe": {
+            "__id": "id0",
+            "open": "window 1 is opened successfully"
+          }
+        }
+        ```
+
 #### Downstream Queue
 The Downstream Queue is used to send `cmd` message from FIWARE to device.
 
@@ -108,21 +169,38 @@ The Downstream Queue is used to send `cmd` message from FIWARE to device.
         ```
 
 ## Validation
-You can validate the upstream messages by using [json schema](https://json-schema.org/).
+You can validate the upstream messages by using [json schema](https://json-schema.org/).  
 If you want to validate upstream messages, please follow below steps:
 
 1. describe the definitions of the upstream messages as json schema.
 1. copy the json files to a directory which is accessible from `amqp10-converter`.
-1. set the file paths of the json files as a json array string to an environment variable `SCHEMA_PATHS` like below:
+1. set the file paths of the json files as a json array string for each queue to an environment variable `SCHEMA_PATHS` like below:
 
     ```
-    $ export SCHEMA_PATHS='["/opt/schema/attr.schema.json","/opt/schema/cmdexe.schema.json"]'
+    $ export SCHEMA_PATHS='{"fs\\.fsp\\.type0\\.up":["/opt/schema/attr.schema.json","/opt/schema/cmdexe.schema.json"]}'
+    ```
+    * the key is a regular expression to match the target Upstream Queue Name.
+    * When some keys match a Upstream Queue Name, all file paths are merged.
+1. start `amqp10-converter`.
+
+This converter will try to validate an arrived upstream message from the beginning of the given json shcema array. This process will stop at the first successful validation, and in which case the arrived upstream message is judged as VALID. Unfortunately if all validations fail, the arrived upstream message is rejected and all following processes are skipped.  
+Therefore, if a ton of json schemas are given, they can cause the negative impact of performance.
+
+## Convert the message format
+You can convert the upstream messages to your desired format by using a [LiquidJS](https://liquidjs.com/) template.  
+If you want to convert upstream messages, please foloow below steps:
+
+1. create a LiquidJS template.
+1. copy the template to a directory which is accessible from `amqp10-converter`.
+1. set the file path for each queue to an environment variable `MAPPING_PATHS` like below:
+
+    ```
+    $ export MAPPING_PATHS='{"fs.fsp.type0.up":"/opt/templates/upstream.liquid"]}'
     ```
 1. start `amqp10-converter`.
 
-This converter will try to validate an arrived upstream message from the beginning of the given json shcema array. This process will stop at the first successful validation, and in which case the arrived upstream message is judged as VALID. Unfortunately if all validations fail, the arrived upstream message is rejected and all following processes are skipped.
-
-Therefore, if a ton of json schemas are given, they can cause the negative impact of performance.
+**CAUTION!**
+The received message will be converted **before** validating it.
 
 ## Requirements
 
@@ -131,6 +209,7 @@ Therefore, if a ton of json schemas are given, they can cause the negative impac
 * [express](https://www.npmjs.com/package/express) 4.17.1
 * [rhea-promise](https://www.npmjs.com/package/rhea-promise) 1.0.0
 * [ajv](https://ajv.js.org/) 6.12.3
+* [liquidjs](https://liquidjs.com/) 9.15.0
 * [log4js](https://www.npmjs.com/package/log4js) 6.2.1
 * [iotagent-node-lib](https://www.npmjs.com/package/iotagent-node-lib) 2.12.0
 
@@ -151,10 +230,14 @@ This converter requires some environment variables like below:
 |`IOTA_CB_HOST`|the hostname of Context Broker|YES|localhost|
 |`IOTA_CB_PORT`|the port of Context Broker|YES|1026|
 |`IOTA_CB_NGSI_VERSION`|the NGSI version|No|v2|
-|`FIWARE_SERVICE`|fiware service of IoT device|YES||
-|`FIWARE_SERVICEPATH`|fiware servicepath of IoT device|YES|/|
-|`ENTITIES`|the list of entitieType and entityId corresponding to devices|YES|[{"type":"type0","id":"id0"}]|
-|`SCHEMA_PATHS`|the list of json schema filepath|NO|[]|
+|`FIWARE_SERVICE`|default fiware service of IoT device|YES||
+|`FIWARE_SERVICEPATH`|default fiware servicepath of IoT device|YES|/|
+|`QUEUE_DEFS`|the list of queue name definition|YES|[{"type":"type0","id":"id0"}]|
+|`SCHEMA_PATHS`|the list of json schema filepath|NO|{}|
+|`MAPPING_PATHS`|the list of json schema filepath|NO|{}|
+|`UPSTREAM_DATA_MODEL`|if "dm-by-entity", the entity Id is included in the Queue Name. if "dm-by-entity-type", the entity Id is not included in the Queue Name.|NO|dm-by-entity|
+|`USE_FULLY_QUALIFIED_QUEUE_NAME`|if "true", FIWARE-SERVICE and FIWARE-SERVICEPATH are included in the Queue Name|NO||
+|`ID_ATTR_NAME`|the key name of entityId included in the message body|NO|\_\_id|
 |`PORT`|listen port of this service|No|3000|
 |`BASE_PATH`|the base path of this servicece|No|/amqp10|
 |`LOG_LEVEL`|log level(trace, debug, info, warn, error, fatal)|No|info|
