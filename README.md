@@ -200,7 +200,7 @@ If you want to convert upstream messages, please foloow below steps:
 1. start `amqp10-converter`.
 
 **CAUTION!**
-The received message will be converted **before** validating it.
+The received message will be converted **after** validating it.
 
 ## Requirements
 
