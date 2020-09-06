@@ -1695,13 +1695,13 @@ describe('/bindigs/amqp10', () => {
                 mappingPaths[k] = tmp.name;
               });
               process.env.MAPPING_PATHS = JSON.stringify(mappingPaths);
-              process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+              process.env.QUEUE_DEFS = '[{"type":"t01","id":"i01"}]';
             });
 
             afterEach(() => {
               cleanups.forEach((c) => c());
               delete process.env.MAPPING_PATHS;
-              delete process.env.ENTITIES;
+              delete process.env.QUEUE_DEFS;
             });
 
             describe.each([
@@ -1740,8 +1740,9 @@ describe('/bindigs/amqp10', () => {
                   if (mappings['t01.i01.up'] === 'attrTemplate') {
                     expect(sendAttributesMock).toHaveBeenCalledTimes(1);
                     expect(setCommandResultMock).not.toHaveBeenCalled();
-                    expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
-                    expect(sendAttributesMock.mock.calls[0][1]).toMatchObject({ temperature: 22.5 });
+                    expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new QueueDef('t01', 'i01'));
+                    expect(sendAttributesMock.mock.calls[0][1]).toMatchObject(new Entity('t01', 'i01'));
+                    expect(sendAttributesMock.mock.calls[0][2]).toMatchObject({ temperature: 22.5 });
                     if (hasDelivery) {
                       expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
                       expect(deliveryReleaseMock).not.toHaveBeenCalled();
@@ -1795,13 +1796,13 @@ describe('/bindigs/amqp10', () => {
                 }
               });
               process.env.MAPPING_PATHS = JSON.stringify(mappingPaths);
-              process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+              process.env.QUEUE_DEFS = '[{"type":"t01","id":"i01"}]';
             });
 
             afterEach(() => {
               cleanups.forEach((c) => c());
               delete process.env.MAPPING_PATHS;
-              delete process.env.ENTITIES;
+              delete process.env.QUEUE_DEFS;
             });
 
             it('processes without any mapping', (done) => {
@@ -1831,8 +1832,9 @@ describe('/bindigs/amqp10', () => {
               .finally(() => {
                 expect(sendAttributesMock).toHaveBeenCalledTimes(1);
                 expect(setCommandResultMock).not.toHaveBeenCalled();
-                expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
-                expect(sendAttributesMock.mock.calls[0][1]).toMatchObject({ temperature: 22.5 });
+                expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new QueueDef('t01', 'i01'));
+                expect(sendAttributesMock.mock.calls[0][1]).toMatchObject(new Entity('t01', 'i01'));
+                expect(sendAttributesMock.mock.calls[0][2]).toMatchObject({ temperature: 22.5 });
                 expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
                 expect(deliveryReleaseMock).not.toHaveBeenCalled();
                 expect(deliveryRejectMock).not.toHaveBeenCalled();
@@ -1855,12 +1857,12 @@ describe('/bindigs/amqp10', () => {
           ])('when receives attrs message (%o)', (rawMessage) => {
             beforeEach(() => {
               process.env.MAPPING_PATHS = mappingPathsStr;
-              process.env.ENTITIES = '[{"type":"t01","id":"i01"}]';
+              process.env.QUEUE_DEFS = '[{"type":"t01","id":"i01"}]';
             });
 
             afterEach(() => {
               delete process.env.MAPPING_PATHS;
-              delete process.env.ENTITIES;
+              delete process.env.QUEUE_DEFS;
             });
 
             it('processes without any mapping', (done) => {
@@ -1890,8 +1892,9 @@ describe('/bindigs/amqp10', () => {
               .finally(() => {
                 expect(sendAttributesMock).toHaveBeenCalledTimes(1);
                 expect(setCommandResultMock).not.toHaveBeenCalled();
-                expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new Entity('t01', 'i01'));
-                expect(sendAttributesMock.mock.calls[0][1]).toMatchObject({ temperature: 22.5 });
+                expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(new QueueDef('t01', 'i01'));
+                expect(sendAttributesMock.mock.calls[0][1]).toMatchObject(new Entity('t01', 'i01'));
+                expect(sendAttributesMock.mock.calls[0][2]).toMatchObject({ temperature: 22.5 });
                 expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
                 expect(deliveryReleaseMock).not.toHaveBeenCalled();
                 expect(deliveryRejectMock).not.toHaveBeenCalled();
