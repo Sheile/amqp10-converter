@@ -1,18 +1,21 @@
 import { readFileSync } from 'fs';
 import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
 import Ajv from 'ajv';
+import { Liquid, Template } from 'liquidjs';
 import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
-import { Entity, DeviceMessage, MessageType, JsonType } from '@/common';
+import { QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
 const username = process.env.AMQP_USERNAME || 'ANONYMOUS';
 const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
-const entitiesStr = process.env.ENTITIES || '[{"type":"type0","id":"id0"}]';
-const schemaPathsStr = process.env.SCHEMA_PATHS || '[]';
+const queueDefsStr = process.env.QUEUE_DEFS || '[{"type":"type0","id":"id0"}]';
+const upstreamDataModel = process.env.UPSTREAM_DATA_MODEL || 'dm-by-entity';
+const schemaPathsStr = process.env.SCHEMA_PATHS || '{}';
+const mappingPathsStr = process.env.MAPPING_PATHS || '{}';
 
 const logger = log4js.getLogger('amqp10');
 
@@ -20,10 +23,10 @@ let connection: Connection | undefined;
 
 export class AMQPBase {
   private connectionOptions: ConnectionOptions;
-  private _entities: Entity[];
+  private _queueDefs: QueueDef[];
 
-  get entities(): Entity[] {
-    return this._entities;
+  get queueDefs(): QueueDef[] {
+    return this._queueDefs;
   }
 
   constructor() {
@@ -42,14 +45,14 @@ export class AMQPBase {
       this.connectionOptions.password = password;
     }
 
-    const rawEntities = JSON.parse(entitiesStr);
-    if (!this.isEntities(rawEntities)) {
-      logger.error(`invalid ENTITIES (${entitiesStr}`);
-      throw new Error(`invalid ENTITIES (${entitiesStr})`);
+    const rawQueueDefs = JSON.parse(queueDefsStr);
+    if (!QueueDef.isQueueDefs(rawQueueDefs)) {
+      logger.error(`invalid QUEUE_DEFS (${rawQueueDefs}`);
+      throw new Error(`invalid QUEUE_DEFS (${rawQueueDefs})`);
     }
 
-    this._entities = rawEntities.map((e: {type: string; id: string}) => {
-      return new Entity(e.type, e.id);
+    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined}) => {
+      return new QueueDef(e.type, e.id, e.fiwareService, e.fiwareServicePath);
     });
   }
 
@@ -67,42 +70,65 @@ export class AMQPBase {
     if (connection) logger.info(`close connection: id=${connection.id}`);
     await connection?.close();
   }
-
-  private isEntities(x: unknown): boolean {
-    return Array.isArray(x) && x.every(e => (typeof e === 'object') && 'type' in e && 'id' in e)
-  }
 }
 
 export class Consumer extends AMQPBase {
   private receivers: Receiver[] = [];
-  private validators: Function[] = [];
+  private validatorPath: {[s: string]: Function[]} | null = null;
+  private engine: Liquid;
+  private mappingPaths: {[s: string]: Template[]} | null = null;
 
   constructor() {
     super();
     this.createValidator();
+    this.engine = new Liquid();
+    this.createMappingPaths();
   }
 
   private createValidator(): void {
     const ajv = Ajv();
     try {
       const rawSchemaPaths = JSON.parse(schemaPathsStr);
-      if (!Array.isArray(rawSchemaPaths)) {
-        logger.warn(`SCHEMA_PATHS (${schemaPathsStr}) is not array`);
-        this.validators = [];
+      if (!isObject(rawSchemaPaths)) {
+        logger.warn(`SCHEMA_PATHS (${schemaPathsStr}) is not valid Object`);
+        this.validatorPath = null;
         return;
       }
-      this.validators = rawSchemaPaths.map((path: string) => {
-        return ajv.compile(JSON.parse(readFileSync(path, 'utf-8')));
-      });
+      this.validatorPath = Object.entries(rawSchemaPaths).map(([k, v]) => {
+        if (!Array.isArray(v)) return [k, []];
+        return [k, v.map((path: string) => ajv.compile(JSON.parse(readFileSync(path, 'utf-8'))))];
+      })
+      .reduce((obj, [k, v]) => ({...obj, [String(k)]:v}), {});
       logger.info(`create validators from ${schemaPathsStr}`);
     } catch (err) {
       logger.warn('invalid SCHEMA_PATHS, so ignore it', err);
-      this.validators = [];
+      this.validatorPath = null;
     }
   }
 
-  hasValidator(): boolean {
-    return this.validators.length > 0;
+  getValidators(queueName: string): Function[] {
+    return (this.validatorPath) ? Object.entries(this.validatorPath).reduce((prev, current) => {
+      return (new RegExp(current[0]).test(queueName)) ? ['', prev[1].concat(current[1])] : ['', prev[1]];
+    }, ['', []])[1] : [];
+  }
+
+  private createMappingPaths(): void {
+    try {
+      const rawMappingPaths = JSON.parse(mappingPathsStr);
+      if (!isObject(rawMappingPaths)) {
+        logger.warn(`MAPPING_PATHS (${mappingPathsStr}) is not valid Object`);
+        this.mappingPaths = null;
+        return;
+      }
+      this.mappingPaths = Object.entries(rawMappingPaths).map(([k, v]) => {
+        return [k, this.engine.parseFileSync(v as string)];
+      })
+      .reduce((obj, [k, v]) => ({...obj, [String(k)]:v}), {});
+      logger.info(`create mappingPaths from ${mappingPathsStr}`);
+    } catch (err) {
+      logger.warn('invalid MAPPING_PATHS, so ignore it', err);
+      this.mappingPaths = null;
+    }
   }
 
   async consume(): Promise<string> {
@@ -113,34 +139,47 @@ export class Consumer extends AMQPBase {
   }
 
   private async receive(connection: Connection): Promise<void> {
-    await Promise.all(this.entities.map(async (entity: Entity) => {
-      await this.createReceiver(connection, entity);
+    const qd = Array.from(new Map(this.queueDefs.map(o => [o.upstreamQueue, o])).values());
+    await Promise.all(qd.map(async (queueDef: QueueDef) => {
+      await this.createReceiver(connection, queueDef);
     }));
   }
 
-  private async createReceiver(connection: Connection, entity: Entity): Promise<void> {
+  private async createReceiver(connection: Connection, queueDef: QueueDef): Promise<void> {
     const receiverOptions: ReceiverOptions = {
       source: {
-        address: entity.upstreamQueue,
+        address: queueDef.upstreamQueue,
       },
       autoaccept: false,
     };
+
+    const validators: Function[] = this.getValidators(queueDef.upstreamQueue);
+    logger.info(`the number of validators (queue=${queueDef.upstreamQueue}) is ${validators.length}`);
+
+    const template = (this.mappingPaths) ? this.mappingPaths[queueDef.upstreamQueue] : undefined;
+    logger.info(`the mapping template of ${queueDef.upstreamQueue} is ${(template) ? 'found' : 'not found'}`);
+
     const receiver = await connection.createReceiver(receiverOptions);
-    logger.info(`consume message from Queue: ${entity.upstreamQueue}`);
+    logger.info(`consume message from Queue: ${queueDef.upstreamQueue}`);
     receiver.on(ReceiverEvents.message, (context: EventContext) => {
       if (context.message) {
         try {
           const msg = this.messageBody2String(context.message);
           logger.debug(`received message: ${msg}`);
-          const deviceMessage = new DeviceMessage(msg);
-          const valid = this.validators.length == 0 ? true : this.validators.some((validate) => validate(deviceMessage.rawJson));
+          const parsed = JSON.parse(msg);
+          const valid = validators.length == 0 ? true : validators.some((validate) => validate(parsed));
           if (!valid) {
             logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
             context.delivery?.reject();
           } else {
+            const converted = (template) ? this.engine.renderSync(template, parsed) : msg;
+            logger.debug(`converted message: ${converted.replace(/\r?\n/g, '')}`);
+            const deviceMessage = new DeviceMessage(converted as string);
+            const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
+                                                                       : new Entity(queueDef.type, queueDef.id);
             switch (deviceMessage.messageType) {
               case MessageType.attrs:
-                sendAttributes(entity, deviceMessage.data)
+                sendAttributes(queueDef, entity, deviceMessage.data)
                   .then(() => {
                     logger.debug('sent attributes: %o', deviceMessage.data);
                     context.delivery?.accept();
@@ -151,7 +190,7 @@ export class Consumer extends AMQPBase {
                   })
                 break;
               case MessageType.cmdexe:
-                setCommandResult(entity, deviceMessage.data)
+                setCommandResult(queueDef, entity, deviceMessage.data)
                   .then(() => {
                     logger.debug('sent command result: %o', deviceMessage.data);
                     context.delivery?.accept();
@@ -197,15 +236,15 @@ export class Consumer extends AMQPBase {
 
 export class Producer extends AMQPBase {
 
-  async produce(entity: Entity, data: JsonType): Promise<number> {
+  async produce(queueDef: QueueDef, data: JsonType): Promise<number> {
     const connection = await this.getConnection();
-    return await this.send(entity, data, connection);
+    return await this.send(queueDef, data, connection);
   }
 
-  private async send(entity: Entity, data: JsonType, connection: Connection): Promise<number> {
+  private async send(queueDef: QueueDef, data: JsonType, connection: Connection): Promise<number> {
     const senderOptions: SenderOptions = {
       target: {
-        address: entity.downstreamQueue,
+        address: queueDef.downstreamQueue,
       }
     };
     const sender = await connection.createAwaitableSender(senderOptions);

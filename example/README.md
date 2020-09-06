@@ -73,7 +73,7 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
         "TimeInstant": {
             "metadata": {},
             "type": "DateTime",
-            "value": "2020-07-14T01:48:30.00Z"
+            "value": "2020-09-06T04:46:32.00Z"
         },
         "id": "robot01",
         "open": {
@@ -105,7 +105,7 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     $ docker run --env-file .env.client my/dummy-client:0.1.0 attrs
     ```
     ```text
-    msg { body: '{"attrs":{"temperature":27.63945891214867}}' }
+    msg { body: '{"attrs":{"temperature":31.241109372105107}}' }
     [connection-1] await sendMessage -> Delivery id: 0, settled: true
     sent attributes successfully
     ```
@@ -122,11 +122,11 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
             "metadata": {
                 "TimeInstant": {
                     "type": "DateTime",
-                    "value": "2020-07-14T01:49:00.00Z"
+                    "value": "2020-09-06T04:46:48.00Z"
                 }
             },
             "type": "number",
-            "value": 27.639458912
+            "value": 31.241109372
         },
         "type": "robot"
     }
@@ -149,8 +149,9 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     ```
     ```text
     ...
-    2020-07-14T01:49:00.142-0000 [DEBUG] amqp10 - received message: {"attrs":{"temperature":27.63945891214867}}
-    2020-07-14T01:49:00.175-0000 [DEBUG] amqp10 - sent attributes: { temperature: 27.63945891214867 }
+    2020-09-06T04:46:48.577-0000 [DEBUG] amqp10 - received message: {"attrs":{"temperature":31.241109372105107}}
+    2020-09-06T04:46:48.577-0000 [DEBUG] amqp10 - converted message: {"attrs":{"temperature":31.241109372105107}}
+    2020-09-06T04:46:48.623-0000 [DEBUG] amqp10 - sent attributes: { temperature: 31.241109372105107 }
     ```
 1. send `open` command to "Orion Context Broker".
 
@@ -174,7 +175,7 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
             "metadata": {
                 "TimeInstant": {
                     "type": "DateTime",
-                    "value": "2020-07-14T01:56:09.00Z"
+                    "value": "2020-09-06T04:50:03.00Z"
                 }
             },
             "type": "commandStatus",
@@ -201,9 +202,9 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     ```
     ```text
     ...
-    2020-07-14T01:56:09.666-0000 [DEBUG] cmd - post /cmd/:type/:id { type: 'robot', id: 'robot01' } { open: 'window1' }
-    2020-07-14T01:56:09.684-0000 [DEBUG] amqp10 - sent message to device: { body: '{"cmd":{"open":"window1"}}' }
-    2020-07-14T01:56:09.688-0000 [DEBUG] cmd - sent cmd to AMQP Server, cmd: {"open":"window1"}, delivered id: 0
+    2020-09-06T04:50:03.725-0000 [DEBUG] cmd - post /cmd/:type/:id { type: 'robot', id: 'robot01' } { open: 'window1' }
+    2020-09-06T04:50:03.742-0000 [DEBUG] amqp10 - sent message to device: { body: '{"cmd":{"open":"window1"}}' }
+    2020-09-06T04:50:03.745-0000 [DEBUG] cmd - sent cmd to AMQP Server, cmd: {"open":"window1"}, delivered id: 0
     ```
 1. consume the `cmd` message from "ActiveMQ Artemis" and produce the `cmdexe` message to "ActiveMQ Artemis".
 
@@ -228,7 +229,7 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
             "metadata": {
                 "TimeInstant": {
                     "type": "DateTime",
-                    "value": "2020-07-14T02:00:12.00Z"
+                    "value": "2020-09-06T04:51:42.00Z"
                 }
             },
             "type": "commandResult",
@@ -238,7 +239,7 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
             "metadata": {
                 "TimeInstant": {
                     "type": "DateTime",
-                    "value": "2020-07-14T02:00:12.00Z"
+                    "value": "2020-09-06T04:51:42.00Z"
                 }
             },
             "type": "commandStatus",
@@ -265,9 +266,10 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     ```
     ```text
     ...
-    2020-07-14T02:00:12.452-0000 [DEBUG] amqp10 - received message: {"cmdexe":{"open":"processed window1"}}
-    2020-07-14T02:00:12.472-0000 [DEBUG] amqp10 - sent command result: { open: 'processed window1' }
-    2020-07-14T02:00:12.478-0000 [DEBUG] iotagent-lib - called setCommandResult successfully
+    2020-09-06T04:51:42.211-0000 [DEBUG] amqp10 - received message: {"cmdexe":{"open":"processed window1"}}
+    2020-09-06T04:51:42.211-0000 [DEBUG] amqp10 - converted message: {"cmdexe":{"open":"processed window1"}}
+    2020-09-06T04:51:42.233-0000 [DEBUG] amqp10 - sent command result: { open: 'processed window1' }
+    2020-09-06T04:51:42.240-0000 [DEBUG] iotagent-lib - called setCommandResult successfully
     ```
 1. send `dummy data` from dummy client to "ActiveMQ Artemis" in order to confirm the message validation.
 
@@ -298,6 +300,6 @@ This is a demonstration that amqp10-converter bridges between AMQP1.0 Broker(Apa
     ```
     ```text
     ...
-    2020-07-14T02:08:09.635-0000 [DEBUG] amqp10 - received message: {"dummy":"dummy"}
-    2020-07-14T02:08:09.635-0000 [ WARN] amqp10 - no json schema matched this msg: msg={"dummy":"dummy"}, schemas=["/opt/schema/attr.schema.json","/opt/schema/cmdexe.schema.json"]
+    2020-09-06T04:53:38.249-0000 [DEBUG] amqp10 - received message: {"dummy":"dummy"}
+    2020-09-06T04:53:38.249-0000 [ WARN] amqp10 - no json schema matched this msg: msg={"dummy":"dummy"}, schemas={"robot\\.robot01\\.up":["/opt/schema/attr.schema.json","/opt/schema/cmdexe.schema.json"]}
     ```

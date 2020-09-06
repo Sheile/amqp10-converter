@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/camelcase */
 import { activate, setCommandResult, deactivate } from 'iotagent-node-lib';
 import { getServices, getDevices } from '@/bindings/iotagent-json';
-import { Entity, ServiceType, DeviceType, isObject } from '@/common';
+import { QueueDef, Entity, ServiceType, DeviceType, isObject } from '@/common';
 
 jest.mock('iotagent-node-lib');
 const activateMock = activate as jest.Mock;
@@ -86,152 +86,143 @@ describe('/bindings/iotagent-lib', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let iotaLib: any;
 
-    beforeEach(() => {
-      jest.isolateModules(() => {
-        iotaLib = require('@/bindings/iotagent-lib');
+    describe.each([
+      [null],
+      ['__id'],
+    ])('when ID_ATTR_NAME is %s', (idAttrName) => {
+      beforeEach(() => {
+        if (idAttrName != null) process.env.ID_ATTR_NAME = idAttrName;
+
+        jest.isolateModules(() => {
+          iotaLib = require('@/bindings/iotagent-lib');
+        });
+
+        const services: ServiceType[] = [
+          {
+            _id: '_01',
+            resource: 'resource01',
+            apikey: 'apikey01',
+            service: 'service01',
+            subservice: 'subservice01',
+            entity_type: 't01',
+          },
+          {
+            _id: '_02',
+            resource: 'resource02',
+            apikey: 'apikey02',
+            service: 'service02',
+            subservice: 'subservice02',
+            entity_type: 't02',
+          }
+        ];
+        getServicesMock.mockReturnValue(services);
+
+        const devices: DeviceType[] = [
+          {
+            device_id: 'device01',
+            service: 'dservice01',
+            service_path: 'dservicepath01',
+            entity_name: 'i01',
+            entity_type: 't01',
+            attributes: ['a01'],
+            lazy: ['l01'],
+            commands: ['c01'],
+            static_attributes: ['s01'],
+          },
+          {
+            device_id: 'device02',
+            service: 'dservice02',
+            service_path: 'dservicepath02',
+            entity_name: 'i02',
+            entity_type: 't02',
+            attributes: ['a02'],
+            lazy: ['l02'],
+            commands: ['c02'],
+            static_attributes: ['s02'],
+          }
+        ];
+        getDevicesMock.mockReturnValue(devices);
       });
 
-      const services: ServiceType[] = [
-        {
-          _id: '_01',
-          resource: 'resource01',
-          apikey: 'apikey01',
-          service: 'service01',
-          subservice: 'subservice01',
-          entity_type: 't01',
-        },
-        {
-          _id: '_02',
-          resource: 'resource02',
-          apikey: 'apikey02',
-          service: 'service02',
-          subservice: 'subservice02',
-          entity_type: 't02',
-        }
-      ];
-      getServicesMock.mockReturnValue(services);
-
-      const devices: DeviceType[] = [
-        {
-          device_id: 'device01',
-          service: 'dservice01',
-          service_path: 'dservicepath01',
-          entity_name: 'i01',
-          entity_type: 't01',
-          attributes: ['a01'],
-          lazy: ['l01'],
-          commands: ['c01'],
-          static_attributes: ['s01'],
-        },
-        {
-          device_id: 'device02',
-          service: 'dservice02',
-          service_path: 'dservicepath02',
-          entity_name: 'i02',
-          entity_type: 't02',
-          attributes: ['a02'],
-          lazy: ['l02'],
-          commands: ['c02'],
-          static_attributes: ['s02'],
-        }
-      ];
-      getDevicesMock.mockReturnValue(devices);
-    });
-
-    describe.each([
-      [undefined, 'undefined'],
-      [null, 'null'],
-      ['', ''],
-      [[], '[]'],
-      [[1, 'a'], '[1, "a"]'],
-    ])('when invalid data is given', (data, desc) => {
-      it(`rejects data (${desc})`, (done) => {
-        const entity = new Entity('t01', 'i01');
-        iotaLib.setCommandResult(entity, data)
-          .then(() => {
-            done.fail();
-          })
-          .catch(() => {
-            expect(setCommandResultMock).toHaveBeenCalledTimes(0);
-            expect(getServicesMock).toHaveBeenCalledTimes(0);
-            expect(getDevicesMock).toHaveBeenCalledTimes(0);
-            done();
-          });
+      afterEach(() => {
+        if (idAttrName != null) delete process.env.ID_ATTR_NAME;
       });
-    });
 
-    describe.each([
-      [{}, '{}'],
-      [{ open: undefined}, '{open: undefined}'],
-      [{ open: null}, '{open: null}'],
-      [{ open: ''}, '{open: ""}'],
-    ])('when empty object is given', (data, desc) => {
-      it(`rejects data (${desc})`, (done) => {
-        const entity = new Entity('t01', 'i01');
-        iotaLib.setCommandResult(entity, data)
-          .then(() => {
-            done.fail();
-          })
-          .catch(() => {
-            expect(setCommandResultMock).toHaveBeenCalledTimes(0);
-            expect(getServicesMock).toHaveBeenCalledTimes(1);
-            expect(getDevicesMock).toHaveBeenCalledTimes(1);
-            done();
-          });
-      });
-    });
-
-    describe.each([
-      [{ open: 'window1 opened' }, 'open', 'window1 opened'],
-      [{ open: { target: 'window1', result: 'opened'} }, 'open', { target: 'window1', result: 'opened' }],
-      [{ open: ['window1', 'window2'] }, 'open', ['window1', 'window2']],
-    ])('when data (%o) is given', (data, cmdName, cmdResult) => {
       describe.each([
-        [true, 'resolves when calling back iotagent-node-lib.setCommandResult without error'],
-        [false, 'rejects when calling back iotagent-node-lib.setCommandResult with error'],
-      ])('', (isResolved, desc) => {
-        it(desc, (done) => {
-          setCommandResultMock.mockImplementation((_a, _b, _c, _d, _e, _f, _g, cb: (err? : unknown | undefined) => Promise<void>): void => {
-            if (isResolved) {
-              cb();
-            } else {
-              cb(new Error('error'));
-            }
-          });
-
-          const entity = new Entity('t02', 'i02');
-          iotaLib.setCommandResult(entity, data)
-            .then(() => {
-              if (!isResolved) done.fail();
-            })
-            .catch(() => {
-              if (isResolved) done.fail();
-            })
-            .finally(() => {
-              expect(setCommandResultMock).toHaveBeenCalledTimes(1);
-              expect(setCommandResultMock.mock.calls[0][0]).toBe('i02');
-              expect(setCommandResultMock.mock.calls[0][1]).toBe('resource02');
-              expect(setCommandResultMock.mock.calls[0][2]).toBe('apikey02');
-              expect(setCommandResultMock.mock.calls[0][3]).toBe(cmdName);
-              if (isObject(cmdResult)) {
-                expect(setCommandResultMock.mock.calls[0][4]).toMatchObject(cmdResult);
-              } else {
-                expect(setCommandResultMock.mock.calls[0][4]).toBe(cmdResult);
-              }
-              expect(setCommandResultMock.mock.calls[0][5]).toBe('OK');
-              expect(setCommandResultMock.mock.calls[0][6]).toMatchObject({
-                type: 't02',
-                id: 'i02',
-                service: 'service02',
-                subservice: 'subservice02',
-                commands: ['c02'],
+        ['di01', 'fs', 'fsp'],
+        [undefined, 'fs', 'fsp'],
+        [undefined, undefined, 'fsp'],
+        [undefined, undefined, undefined],
+      ])('when QueueDef(type=t01, id=%s, fiwareService=%s, fiwareServicePath=%s) and Entity(type=t01, id=i01) are given', (qdid, fs, fsp) => {
+        describe.each([
+          [undefined, 'undefined'],
+          [null, 'null'],
+          ['', ''],
+          [[], '[]'],
+          [[1, 'a'], '[1, "a"]'],
+        ])('when invalid data is given', (data, desc) => {
+          it(`rejects data (${desc})`, (done) => {
+            const entity = new Entity('t01', 'i01');
+            const queueDef = new QueueDef('t01', qdid, fs, fsp);
+            iotaLib.setCommandResult(queueDef, entity, data)
+              .then(() => {
+                done.fail();
+              })
+              .catch(() => {
+                expect(setCommandResultMock).toHaveBeenCalledTimes(0);
+                expect(getServicesMock).toHaveBeenCalledTimes(0);
+                expect(getDevicesMock).toHaveBeenCalledTimes(0);
+                done();
               });
-              expect(getServicesMock).toHaveBeenCalledTimes(1);
-              expect(getDevicesMock).toHaveBeenCalledTimes(1);
+          });
+        });
 
-              // call setCommandResult again
-              // service and device is cached, so getServices and getDevices does not call again
-              iotaLib.setCommandResult(entity, data)
+        describe.each([
+          [{}, '{}'],
+          [{ open: undefined }, '{open: undefined}'],
+          [{ open: null }, '{open: null}'],
+          [{ open: '' }, '{open: ""}'],
+        ])('when empty object is given', (data, desc) => {
+          it(`rejects data (${desc})`, (done) => {
+            const entity = new Entity('t01', 'i01');
+            const queueDef = new QueueDef('t01', qdid, fs, fsp);
+            iotaLib.setCommandResult(queueDef, entity, data)
+              .then(() => {
+                done.fail();
+              })
+              .catch(() => {
+                expect(setCommandResultMock).toHaveBeenCalledTimes(0);
+                expect(getServicesMock).toHaveBeenCalledTimes(1);
+                expect(getServicesMock.mock.calls[0][0]).toMatchObject(queueDef);
+                expect(getDevicesMock).toHaveBeenCalledTimes(1);
+                expect(getDevicesMock.mock.calls[0][0]).toMatchObject(queueDef);
+                done();
+              });
+          });
+        });
+
+        describe.each([
+          [{ open: 'window1 opened' }, 'open', 'window1 opened'],
+          [{ open: { target: 'window1', result: 'opened' } }, 'open', { target: 'window1', result: 'opened' }],
+          [{ open: ['window1', 'window2'] }, 'open', ['window1', 'window2']],
+          [{ __id: '01', open: 'window1 opened' }, 'open', 'window1 opened'],
+        ])('when data (%o) is given', (data, cmdName, cmdResult) => {
+          describe.each([
+            [true, 'resolves when calling back iotagent-node-lib.setCommandResult without error'],
+            [false, 'rejects when calling back iotagent-node-lib.setCommandResult with error'],
+          ])('', (isResolved, desc) => {
+            it(desc, (done) => {
+              setCommandResultMock.mockImplementation((_a, _b, _c, _d, _e, _f, _g, cb: (err?: unknown | undefined) => Promise<void>): void => {
+                if (isResolved) {
+                  cb();
+                } else {
+                  cb(new Error('error'));
+                }
+              });
+
+              const entity = new Entity('t02', 'i02');
+              const queueDef = new QueueDef('t01', qdid, fs, fsp);
+              iotaLib.setCommandResult(queueDef, entity, data)
                 .then(() => {
                   if (!isResolved) done.fail();
                 })
@@ -239,34 +230,70 @@ describe('/bindings/iotagent-lib', () => {
                   if (isResolved) done.fail();
                 })
                 .finally(() => {
-                  expect(setCommandResultMock).toHaveBeenCalledTimes(2);
+                  expect(setCommandResultMock).toHaveBeenCalledTimes(1);
+                  expect(setCommandResultMock.mock.calls[0][0]).toBe('i02');
+                  expect(setCommandResultMock.mock.calls[0][1]).toBe('resource02');
+                  expect(setCommandResultMock.mock.calls[0][2]).toBe('apikey02');
+                  expect(setCommandResultMock.mock.calls[0][3]).toBe(cmdName);
+                  if (isObject(cmdResult)) {
+                    expect(setCommandResultMock.mock.calls[0][4]).toMatchObject(cmdResult);
+                  } else {
+                    expect(setCommandResultMock.mock.calls[0][4]).toBe(cmdResult);
+                  }
+                  expect(setCommandResultMock.mock.calls[0][5]).toBe('OK');
+                  expect(setCommandResultMock.mock.calls[0][6]).toMatchObject({
+                    type: 't02',
+                    id: 'i02',
+                    service: 'service02',
+                    subservice: 'subservice02',
+                    commands: ['c02'],
+                  });
                   expect(getServicesMock).toHaveBeenCalledTimes(1);
+                  expect(getServicesMock.mock.calls[0][0]).toMatchObject(queueDef);
                   expect(getDevicesMock).toHaveBeenCalledTimes(1);
-                  done();
+                  expect(getDevicesMock.mock.calls[0][0]).toMatchObject(queueDef);
+
+                  // call setCommandResult again
+                  // service and device is cached, so getServices and getDevices does not call again
+                  iotaLib.setCommandResult(queueDef, entity, data)
+                    .then(() => {
+                      if (!isResolved) done.fail();
+                    })
+                    .catch(() => {
+                      if (isResolved) done.fail();
+                    })
+                    .finally(() => {
+                      expect(setCommandResultMock).toHaveBeenCalledTimes(2);
+                      expect(getServicesMock).toHaveBeenCalledTimes(1);
+                      expect(getDevicesMock).toHaveBeenCalledTimes(1);
+                      done();
+                    });
                 });
             });
-        });
-      });
-    });
-
-    describe.each([
-      ['notexist', 'notexist', 1, 0],
-      ['notexist', 'i01', 1, 0],
-      ['t01', 'notexist', 1, 1],
-    ])('when entity does not match Services or Devices', (type, id, getServicesCallTimes, getDevicesCallTimes) => {
-      it(`rejects Entity(type=${type}, id=${id})`, (done) => {
-        const data = { open: 'window1 opened' };
-        const entity = new Entity(type, id);
-        iotaLib.setCommandResult(entity, data)
-          .then(() => {
-            done.fail();
-          })
-          .catch(() => {
-            expect(setCommandResultMock).toHaveBeenCalledTimes(0);
-            expect(getServicesMock).toHaveBeenCalledTimes(getServicesCallTimes);
-            expect(getDevicesMock).toHaveBeenCalledTimes(getDevicesCallTimes);
-            done();
           });
+        });
+
+        describe.each([
+          ['notexist', 'notexist', 1, 0],
+          ['notexist', 'i01', 1, 0],
+          ['t01', 'notexist', 1, 1],
+        ])('when entity does not match Services or Devices', (type, id, getServicesCallTimes, getDevicesCallTimes) => {
+          it(`rejects Entity(type=${type}, id=${id})`, (done) => {
+            const data = { open: 'window1 opened' };
+            const entity = new Entity(type, id);
+            const queueDef = new QueueDef(type, qdid, fs, fsp);
+            iotaLib.setCommandResult(queueDef, entity, data)
+              .then(() => {
+                done.fail();
+              })
+              .catch(() => {
+                expect(setCommandResultMock).toHaveBeenCalledTimes(0);
+                expect(getServicesMock).toHaveBeenCalledTimes(getServicesCallTimes);
+                expect(getDevicesMock).toHaveBeenCalledTimes(getDevicesCallTimes);
+                done();
+              });
+          });
+        });
       });
     });
   });
