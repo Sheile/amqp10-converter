@@ -172,37 +172,18 @@ export class Consumer extends AMQPBase {
             logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
             context.delivery?.reject();
           } else {
-            const converted = (template) ? this.engine.renderSync(template, parsed) : msg;
-            logger.debug(`converted message: ${converted.replace(/\r?\n/g, '')}`);
-            const deviceMessage = new DeviceMessage(converted as string);
-            const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
-                                                                       : new Entity(queueDef.type, queueDef.id);
-            switch (deviceMessage.messageType) {
-              case MessageType.attrs:
-                sendAttributes(queueDef, entity, deviceMessage.data)
-                  .then(() => {
-                    logger.debug('sent attributes: %o', deviceMessage.data);
-                    context.delivery?.accept();
-                  })
-                  .catch((err) => {
-                    logger.error('failed sending attributes', err);
-                    context.delivery?.release();
-                  })
-                break;
-              case MessageType.cmdexe:
-                setCommandResult(queueDef, entity, deviceMessage.data)
-                  .then(() => {
-                    logger.debug('sent command result: %o', deviceMessage.data);
-                    context.delivery?.accept();
-                  })
-                  .catch((err) => {
-                    logger.error('failed sending command result', err);
-                    context.delivery?.release();
-                  })
-                break;
-              default:
-                logger.warn('unexpected message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
-                context.delivery?.reject();
+            if (Array.isArray(parsed)) {
+              const deviceMessages = parsed.map(original => {
+                const converted = (template) ? this.engine.renderSync(template, original) : JSON.stringify(original);
+                logger.debug(`converted message: ${converted.replace(/\r?\n/g, '')}`);
+                return new DeviceMessage(converted as string);
+              })
+              deviceMessages.forEach(deviceMessage => this.processSingleMessage(context, queueDef, deviceMessage));
+            } else {
+              const converted = (template) ? this.engine.renderSync(template, parsed) : msg;
+              logger.debug(`converted message: ${converted.replace(/\r?\n/g, '')}`);
+              const deviceMessage = new DeviceMessage(converted as string);
+              this.processSingleMessage(context, queueDef, deviceMessage);
             }
           }
         } catch (err) {
@@ -225,6 +206,39 @@ export class Consumer extends AMQPBase {
     }));
     await super.close();
   }
+
+  private processSingleMessage(context: EventContext, queueDef: QueueDef, deviceMessage: DeviceMessage) {
+    const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
+                                                               : new Entity(queueDef.type, queueDef.id);
+    switch (deviceMessage.messageType) {
+      case MessageType.attrs:
+        sendAttributes(queueDef, entity, deviceMessage.data)
+          .then(() => {
+            logger.debug('sent attributes: %o', deviceMessage.data);
+            context.delivery?.accept();
+          })
+          .catch((err) => {
+            logger.error('failed sending attributes', err);
+            context.delivery?.release();
+          })
+        break;
+      case MessageType.cmdexe:
+        setCommandResult(queueDef, entity, deviceMessage.data)
+          .then(() => {
+            logger.debug('sent command result: %o', deviceMessage.data);
+            context.delivery?.accept();
+          })
+          .catch((err) => {
+            logger.error('failed sending command result', err);
+            context.delivery?.release();
+          })
+        break;
+      default:
+        logger.warn('unexpected message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
+        context.delivery?.reject();
+    }
+  }
+
 
   private messageBody2String(message: Message): string {
     if (typeof message.body === 'string') return message.body;
