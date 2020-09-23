@@ -34,9 +34,7 @@ export class AMQPBase {
       hostname: host,
       host: host,
       port: port,
-      username: username,
-      // eslint-disable-next-line @typescript-eslint/camelcase
-      reconnect_limit: 100,
+      username: username
     };
     if (useTLS) {
       this.connectionOptions.transport = "tls";
