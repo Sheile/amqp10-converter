@@ -4,7 +4,8 @@ import Ajv from 'ajv';
 import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
-import { QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject } from '@/common';
+import { sendNgsiMessage } from '@/bindings/orion';
+import { BackendType, QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
@@ -49,8 +50,8 @@ export class AMQPBase {
       throw new Error(`invalid QUEUE_DEFS (${rawQueueDefs})`);
     }
 
-    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined}) => {
-      return new QueueDef(e.type, e.id, e.fiwareService, e.fiwareServicePath);
+    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined, backend: string |undefined}) => {
+      return new QueueDef(e.type, e.id, e.fiwareService, e.fiwareServicePath, e.backend);
     });
   }
 
@@ -144,35 +145,10 @@ export class Consumer extends AMQPBase {
             logger.warn(`no json schema matched this msg: msg=${msg}, schemas=${schemaPathsStr}`);
             context.delivery?.reject();
           } else {
-            const deviceMessage = new DeviceMessage(msg);
-            const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
-                                                                       : new Entity(queueDef.type, queueDef.id);
-            switch (deviceMessage.messageType) {
-              case MessageType.attrs:
-                sendAttributes(queueDef, entity, deviceMessage.data)
-                  .then(() => {
-                    logger.debug('sent attributes: %o', deviceMessage.data);
-                    context.delivery?.accept();
-                  })
-                  .catch((err) => {
-                    logger.error('failed sending attributes', err);
-                    context.delivery?.release();
-                  })
-                break;
-              case MessageType.cmdexe:
-                setCommandResult(queueDef, entity, deviceMessage.data)
-                  .then(() => {
-                    logger.debug('sent command result: %o', deviceMessage.data);
-                    context.delivery?.accept();
-                  })
-                  .catch((err) => {
-                    logger.error('failed sending command result', err);
-                    context.delivery?.release();
-                  })
-                break;
-              default:
-                logger.warn('unexpected message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
-                context.delivery?.reject();
+            if (queueDef.backend === BackendType.iotagent) {
+              this.sendMessageToIotAgent(queueDef, context, msg);
+            } else {
+              this.sendMessageToOrion(queueDef, context, msg);
             }
           }
         } catch (err) {
@@ -201,6 +177,52 @@ export class Consumer extends AMQPBase {
     if (message.body && message.body.content) return message.body.content.toString("utf-8");
     if (message.body && Buffer.isBuffer(message.body)) return message.body.toString("utf-8");
     throw new Error('Unknown message format');
+  }
+
+  private sendMessageToIotAgent(queueDef: QueueDef, context: EventContext, message: string) {
+    const deviceMessage = new DeviceMessage(message);
+    const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
+                                                               : new Entity(queueDef.type, queueDef.id);
+    switch (deviceMessage.messageType) {
+      case MessageType.attrs:
+        sendAttributes(queueDef, entity, deviceMessage.data)
+          .then(() => {
+            logger.debug('sent attributes: %o', deviceMessage.data);
+            context.delivery?.accept();
+          })
+          .catch((err) => {
+            logger.error('failed sending attributes', err);
+            context.delivery?.release();
+          })
+        break;
+      case MessageType.cmdexe:
+        setCommandResult(queueDef, entity, deviceMessage.data)
+          .then(() => {
+            logger.debug('sent command result: %o', deviceMessage.data);
+            context.delivery?.accept();
+          })
+          .catch((err) => {
+            logger.error('failed sending command result', err);
+            context.delivery?.release();
+          })
+        break;
+      default:
+        logger.warn('unexpected message type', deviceMessage.messageType && MessageType[deviceMessage.messageType]);
+        context.delivery?.reject();
+    }
+  }
+
+  private sendMessageToOrion(queueDef: QueueDef, context: EventContext, message: string) {
+    const rawJson = JSON.parse(message);
+    sendNgsiMessage(queueDef, rawJson)
+      .then(() => {
+        logger.debug('sent ngsi message: %s', message);
+        context.delivery?.accept();
+      })
+      .catch((err) => {
+        logger.error('failed sending nsgi message', err);
+        context.delivery?.release();
+      })
   }
 }
 

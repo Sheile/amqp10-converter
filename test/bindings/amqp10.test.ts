@@ -4,6 +4,7 @@ import { Connection, ConnectionOptions, ReceiverEvents } from 'rhea-promise';
 import { fileSync } from 'tmp-promise';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
+import { sendNgsiMessage } from '@/bindings/orion';
 import { QueueDef, Entity } from '@/common';
 
 jest.mock('rhea-promise');
@@ -26,6 +27,9 @@ jest.mock('@/bindings/iotagent-lib');
 const activateMock = activate as jest.Mock;
 const setCommandResultMock = setCommandResult as jest.Mock;
 const deactivateMock = deactivate as jest.Mock;
+
+jest.mock('@/bindings/orion');
+const sendNgsiMessageMock = sendNgsiMessage as jest.Mock;
 
 describe('/bindigs/amqp10', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -436,282 +440,376 @@ describe('/bindigs/amqp10', () => {
 
       });
 
-      describe.each([
-        [null],
-        ['dm-by-entity'],
-        ['dm-by-entity-type'],
-      ])('when the UPSTREAM_DATA_MODEL is %s', (usdm) => {
+      describe('with IoTAgent backend', () => {
         describe.each([
-          [
-            { body: '{"attrs":{"temperature":22.5}}'},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i01'),
-          ],
-          [
-            { body: '{"attrs":{"temperature":22.5}}'},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', ''),
-          ],
-          [
-            { body: '{"attrs":{"temperature":22.5,"__id":"i11"}}'},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: '{"attrs":{"temperature":22.5,"__id":"i11"}}'},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: { content: Buffer.from('{"attrs":{"temperature":22.5}}')}},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i01'),
-          ],
-          [
-            { body: { content: Buffer.from('{"attrs":{"temperature":22.5}}')}},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', ''),
-          ],
-          [
-            { body: { content: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')}},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: { content: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')}},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: Buffer.from('{"attrs":{"temperature":22.5}}')},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i01'),
-          ],
-          [
-            { body: Buffer.from('{"attrs":{"temperature":22.5}}')},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', ''),
-          ],
-          [
-            { body: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', 'i11'),
-          ],
-        ])('when receives attrs message (%o)', (rawMessage, queueDefStr, queueDef, dmeEntity, dmetEntity) => {
-          beforeEach(() => {
-            if (usdm != null) process.env.UPSTREAM_DATA_MODEL = usdm;
-            process.env.QUEUE_DEFS = queueDefStr;
-          });
+          [null],
+          ['dm-by-entity'],
+          ['dm-by-entity-type'],
+        ])('when the UPSTREAM_DATA_MODEL is %s', (usdm) => {
+          describe.each([
+            [
+              { body: '{"attrs":{"temperature":22.5}}'},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i01'),
+            ],
+            [
+              { body: '{"attrs":{"temperature":22.5}}'},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', ''),
+            ],
+            [
+              { body: '{"attrs":{"temperature":22.5,"__id":"i11"}}'},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: '{"attrs":{"temperature":22.5,"__id":"i11"}}'},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: { content: Buffer.from('{"attrs":{"temperature":22.5}}')}},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i01'),
+            ],
+            [
+              { body: { content: Buffer.from('{"attrs":{"temperature":22.5}}')}},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', ''),
+            ],
+            [
+              { body: { content: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')}},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: { content: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')}},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: Buffer.from('{"attrs":{"temperature":22.5}}')},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i01'),
+            ],
+            [
+              { body: Buffer.from('{"attrs":{"temperature":22.5}}')},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', ''),
+            ],
+            [
+              { body: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: Buffer.from('{"attrs":{"temperature":22.5,"__id":"i11"}}')},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', 'i11'),
+            ],
+          ])('when receives attrs message (%o)', (rawMessage, queueDefStr, queueDef, dmeEntity, dmetEntity) => {
+            beforeEach(() => {
+              if (usdm != null) process.env.UPSTREAM_DATA_MODEL = usdm;
+              process.env.QUEUE_DEFS = queueDefStr;
+            });
 
-          afterEach(() => {
-            if (usdm != null) delete process.env.UPSTREAM_DATA_MODEL;
-            delete process.env.QUEUE_DEFS;
+            afterEach(() => {
+              if (usdm != null) delete process.env.UPSTREAM_DATA_MODEL;
+              delete process.env.QUEUE_DEFS;
+            });
+
+            describe.each([
+              ['when sendAttribures resolved', 'send attriubtes successfully and accepts context.delivery', true, true],
+              ['when sendAttribures rejected', 'failed sending attritues and releases context.delivery', false, true],
+              ['when sendAttribures resolved but context has no delivery', 'send attributes successfully and nothing to do for delivery', true, false],
+              ['when sendAttribures rejected but context has no delivery', 'failed sending attributes and nothing to do for delivery', false, false],
+            ])('%s', (_, desc, isResolved, hasDelivery) => {
+              it(desc, (done) => {
+                const receiver = new EventEmitter();
+                jest.isolateModules(() => {
+                  connOpenMock.mockReturnValue(new Promise((resolve) => {
+                    resolve();
+                  }));
+                  connCreateReceiverMock.mockReturnValue(new Promise((resolve) => {
+                    resolve(receiver);
+                  }));
+                  activateMock.mockReturnValue(new Promise((resolve) => {
+                    resolve();
+                  }));
+                  sendAttributesMock.mockReturnValue(new Promise((resolve, reject) => {
+                    if (isResolved) {
+                      resolve();
+                    } else {
+                      reject(new Error('sendAttributes rejected'));
+                    }
+                  }));
+                  amqp10 = require('@/bindings/amqp10');
+                });
+                const consumer = new amqp10.Consumer();
+                consumer.consume()
+                  .then(() => {
+                    if (hasDelivery) {
+                      receiver.emit(ReceiverEvents.message, {
+                        message: rawMessage,
+                        delivery: {
+                          accept: deliveryAcceptMock,
+                          release: deliveryReleaseMock,
+                          reject: deliveryRejectMock,
+                        },
+                      });
+                    } else {
+                      receiver.emit(ReceiverEvents.message, { message: rawMessage });
+                    }
+                  })
+                  .catch(() => {
+                    done.fail();
+                  })
+                  .finally(() => {
+                    expect(sendAttributesMock).toHaveBeenCalledTimes(1);
+                    expect(sendNgsiMessageMock).not.toHaveBeenCalled();
+                    expect(setCommandResultMock).not.toHaveBeenCalled();
+                    expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(queueDef);
+                    expect(sendAttributesMock.mock.calls[0][1]).toMatchObject((usdm === 'dm-by-entity-type') ? dmetEntity : dmeEntity);
+                    expect(sendAttributesMock.mock.calls[0][2]).toMatchObject({ temperature: 22.5 });
+                    if (hasDelivery) {
+                      if (isResolved) {
+                        expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+                        expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                        expect(deliveryRejectMock).not.toHaveBeenCalled();
+                      } else {
+                        expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                        expect(deliveryReleaseMock).toHaveBeenCalledTimes(1);
+                        expect(deliveryRejectMock).not.toHaveBeenCalled();
+                      }
+                    } else {
+                      expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                      expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                      expect(deliveryRejectMock).not.toHaveBeenCalled();
+                    }
+                    done();
+                  });
+              });
+            });
           });
 
           describe.each([
-            ['when sendAttribures resolved', 'send attriubtes successfully and accepts context.delivery', true, true],
-            ['when sendAttribures rejected', 'failed sending attritues and releases context.delivery', false, true],
-            ['when sendAttribures resolved but context has no delivery', 'send attributes successfully and nothing to do for delivery', true, false],
-            ['when sendAttribures rejected but context has no delivery', 'failed sending attributes and nothing to do for delivery', false, false],
-          ])('%s', (_, desc, isResolved, hasDelivery) => {
-            it(desc, (done) => {
-              const receiver = new EventEmitter();
-              jest.isolateModules(() => {
-                connOpenMock.mockReturnValue(new Promise((resolve) => {
-                  resolve();
-                }));
-                connCreateReceiverMock.mockReturnValue(new Promise((resolve) => {
-                  resolve(receiver);
-                }));
-                activateMock.mockReturnValue(new Promise((resolve) => {
-                  resolve();
-                }));
-                sendAttributesMock.mockReturnValue(new Promise((resolve, reject) => {
-                  if (isResolved) {
+            [
+              { body: '{"cmdexe":{"open":"window1"}}'},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i01'),
+            ],
+            [
+              { body: '{"cmdexe":{"open":"window1"}}'},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', ''),
+            ],
+            [
+              { body: '{"cmdexe":{"open":"window1","__id":"i11"}}'},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: '{"cmdexe":{"open":"window1","__id":"i11"}}'},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: { content: Buffer.from('{"cmdexe":{"open":"window1"}}')}},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i01'),
+            ],
+            [
+              { body: { content: Buffer.from('{"cmdexe":{"open":"window1"}}')}},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', ''),
+            ],
+            [
+              { body: { content: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')}},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: { content: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')}},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: Buffer.from('{"cmdexe":{"open":"window1"}}')},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i01'),
+            ],
+            [
+              { body: Buffer.from('{"cmdexe":{"open":"window1"}}')},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', ''),
+            ],
+            [
+              { body: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')},
+              '[{"type":"t01","id":"i01"}]',
+              new QueueDef('t01', 'i01'),
+              new Entity('t01', 'i01'),
+              new Entity('t01', 'i11'),
+            ],
+            [
+              { body: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')},
+              '[{"type":"t01"}]',
+              new QueueDef('t01'),
+              new Entity('t01', ''),
+              new Entity('t01', 'i11'),
+            ],
+          ])('when receives cmdexe message (%o)', (rawMessage, queueDefStr, queueDef, dmeEntity, dmetEntity) => {
+            beforeEach(() => {
+              if (usdm != null) process.env.UPSTREAM_DATA_MODEL = usdm;
+              process.env.QUEUE_DEFS = queueDefStr;
+            });
+
+            afterEach(() => {
+              if (usdm != null) delete process.env.UPSTREAM_DATA_MODEL;
+              delete process.env.QUEUE_DEFS;
+            });
+
+            describe.each([
+              ['when setCommandResult resolved', 'send cmdexe successfully and accepts context.delivery', true, true],
+              ['when setCommandResult rejected', 'failed sending cmdexe and releases context.delivery', false, true],
+              ['when setCommandResult resolved but context has no delivery', 'send cmdexe successfully and nothing to do for delivery', true, false],
+              ['when setCommandResult rejected but context has no delivery', 'failed sending cmdexe and nothing to do for delivery', false, false],
+            ])('%s', (_, desc, isResolved, hasDelivery) => {
+              it(desc, (done) => {
+                const receiver = new EventEmitter();
+                jest.isolateModules(() => {
+                  connOpenMock.mockReturnValue(new Promise((resolve) => {
                     resolve();
-                  } else {
-                    reject(new Error('sendAttributes rejected'));
-                  }
-                }));
-                amqp10 = require('@/bindings/amqp10');
-              });
-              const consumer = new amqp10.Consumer();
-              consumer.consume()
-                .then(() => {
-                  if (hasDelivery) {
-                    receiver.emit(ReceiverEvents.message, {
-                      message: rawMessage,
-                      delivery: {
-                        accept: deliveryAcceptMock,
-                        release: deliveryReleaseMock,
-                        reject: deliveryRejectMock,
-                      },
-                    });
-                  } else {
-                    receiver.emit(ReceiverEvents.message, { message: rawMessage });
-                  }
-                })
-                .catch(() => {
-                  done.fail();
-                })
-                .finally(() => {
-                  expect(sendAttributesMock).toHaveBeenCalledTimes(1);
-                  expect(setCommandResultMock).not.toHaveBeenCalled();
-                  expect(sendAttributesMock.mock.calls[0][0]).toMatchObject(queueDef);
-                  expect(sendAttributesMock.mock.calls[0][1]).toMatchObject((usdm === 'dm-by-entity-type') ? dmetEntity : dmeEntity);
-                  expect(sendAttributesMock.mock.calls[0][2]).toMatchObject({ temperature: 22.5 });
-                  if (hasDelivery) {
+                  }));
+                  connCreateReceiverMock.mockReturnValue(new Promise((resolve) => {
+                    resolve(receiver);
+                  }));
+                  activateMock.mockReturnValue(new Promise((resolve) => {
+                    resolve();
+                  }));
+                  setCommandResultMock.mockReturnValue(new Promise((resolve, reject) => {
                     if (isResolved) {
-                      expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
-                      expect(deliveryReleaseMock).not.toHaveBeenCalled();
-                      expect(deliveryRejectMock).not.toHaveBeenCalled();
+                      resolve();
+                    } else {
+                      reject(new Error('setCommandResult rejected'));
+                    }
+                  }));
+                  amqp10 = require('@/bindings/amqp10');
+                });
+                const consumer = new amqp10.Consumer();
+                consumer.consume()
+                  .then(() => {
+                    if (hasDelivery) {
+                      receiver.emit(ReceiverEvents.message, {
+                        message: rawMessage,
+                        delivery: {
+                          accept: deliveryAcceptMock,
+                          release: deliveryReleaseMock,
+                          reject: deliveryRejectMock,
+                        },
+                      });
+                    } else {
+                      receiver.emit(ReceiverEvents.message, { message: rawMessage });
+                    }
+                  })
+                  .catch(() => {
+                    done.fail();
+                  })
+                  .finally(() => {
+                    expect(sendAttributesMock).not.toHaveBeenCalled();
+                    expect(setCommandResultMock).toHaveBeenCalledTimes(1);
+                    expect(setCommandResultMock.mock.calls[0][0]).toMatchObject(queueDef);
+                    expect(setCommandResultMock.mock.calls[0][1]).toMatchObject((usdm === 'dm-by-entity-type') ? dmetEntity : dmeEntity);
+                    expect(setCommandResultMock.mock.calls[0][2]).toMatchObject({ open: 'window1' });
+                    if (hasDelivery) {
+                      if (isResolved) {
+                        expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+                        expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                        expect(deliveryRejectMock).not.toHaveBeenCalled();
+                      } else {
+                        expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                        expect(deliveryReleaseMock).toHaveBeenCalledTimes(1);
+                        expect(deliveryRejectMock).not.toHaveBeenCalled();
+                      }
                     } else {
                       expect(deliveryAcceptMock).not.toHaveBeenCalled();
-                      expect(deliveryReleaseMock).toHaveBeenCalledTimes(1);
+                      expect(deliveryReleaseMock).not.toHaveBeenCalled();
                       expect(deliveryRejectMock).not.toHaveBeenCalled();
                     }
-                  } else {
-                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
-                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
-                    expect(deliveryRejectMock).not.toHaveBeenCalled();
-                  }
-                  done();
-                });
+                    done();
+                  });
+              });
             });
           });
         });
 
         describe.each([
-          [
-            { body: '{"cmdexe":{"open":"window1"}}'},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i01'),
-          ],
-          [
-            { body: '{"cmdexe":{"open":"window1"}}'},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', ''),
-          ],
-          [
-            { body: '{"cmdexe":{"open":"window1","__id":"i11"}}'},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: '{"cmdexe":{"open":"window1","__id":"i11"}}'},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: { content: Buffer.from('{"cmdexe":{"open":"window1"}}')}},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i01'),
-          ],
-          [
-            { body: { content: Buffer.from('{"cmdexe":{"open":"window1"}}')}},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', ''),
-          ],
-          [
-            { body: { content: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')}},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: { content: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')}},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: Buffer.from('{"cmdexe":{"open":"window1"}}')},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i01'),
-          ],
-          [
-            { body: Buffer.from('{"cmdexe":{"open":"window1"}}')},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', ''),
-          ],
-          [
-            { body: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')},
-            '[{"type":"t01","id":"i01"}]',
-            new QueueDef('t01', 'i01'),
-            new Entity('t01', 'i01'),
-            new Entity('t01', 'i11'),
-          ],
-          [
-            { body: Buffer.from('{"cmdexe":{"open":"window1","__id":"i11"}}')},
-            '[{"type":"t01"}]',
-            new QueueDef('t01'),
-            new Entity('t01', ''),
-            new Entity('t01', 'i11'),
-          ],
-        ])('when receives cmdexe message (%o)', (rawMessage, queueDefStr, queueDef, dmeEntity, dmetEntity) => {
+          [{ body: '{"cmd":{"open":"window1"}}' }],
+          [{ body: { content: Buffer.from('{"cmd":{"open":"window1"}}') } }],
+          [{ body: Buffer.from('{"cmd":{"open":"window1"}}') }],
+          [{ body: '{"unknown":""}' }],
+          [{ body: { content: Buffer.from('{"unknown":""}') } }],
+          [{ body: Buffer.from('{"unknown":""}') }],
+          [{ body: '{"cmdexe":{"open":"window1"}' }],
+          [{ wxyz: '{"cmdexe":{"open":"window1"}}'}],
+          [{ body: '[{"type":"t01","id":"i01"}]' }],
+          [{}],
+        ])('when receives unexpected message (%o)', (rawMessage) => {
           beforeEach(() => {
-            if (usdm != null) process.env.UPSTREAM_DATA_MODEL = usdm;
-            process.env.QUEUE_DEFS = queueDefStr;
+            process.env.QUEUE_DEFS = '[{"type":"t01","id":"i01"}]';
           });
 
           afterEach(() => {
-            if (usdm != null) delete process.env.UPSTREAM_DATA_MODEL;
             delete process.env.QUEUE_DEFS;
           });
 
           describe.each([
-            ['when setCommandResult resolved', 'send cmdexe successfully and accepts context.delivery', true, true],
-            ['when setCommandResult rejected', 'failed sending cmdexe and releases context.delivery', false, true],
-            ['when setCommandResult resolved but context has no delivery', 'send cmdexe successfully and nothing to do for delivery', true, false],
-            ['when setCommandResult rejected but context has no delivery', 'failed sending cmdexe and nothing to do for delivery', false, false],
-          ])('%s', (_, desc, isResolved, hasDelivery) => {
+            ['when context has delivery', 'reject context.delivery', true],
+            ['when context has no delivery', 'nothing to do for delivery', false],
+          ])('%s', (_, desc, hasDelivery) => {
             it(desc, (done) => {
               const receiver = new EventEmitter();
               jest.isolateModules(() => {
@@ -723,13 +821,6 @@ describe('/bindigs/amqp10', () => {
                 }));
                 activateMock.mockReturnValue(new Promise((resolve) => {
                   resolve();
-                }));
-                setCommandResultMock.mockReturnValue(new Promise((resolve, reject) => {
-                  if (isResolved) {
-                    resolve();
-                  } else {
-                    reject(new Error('setCommandResult rejected'));
-                  }
                 }));
                 amqp10 = require('@/bindings/amqp10');
               });
@@ -754,20 +845,11 @@ describe('/bindigs/amqp10', () => {
                 })
                 .finally(() => {
                   expect(sendAttributesMock).not.toHaveBeenCalled();
-                  expect(setCommandResultMock).toHaveBeenCalledTimes(1);
-                  expect(setCommandResultMock.mock.calls[0][0]).toMatchObject(queueDef);
-                  expect(setCommandResultMock.mock.calls[0][1]).toMatchObject((usdm === 'dm-by-entity-type') ? dmetEntity : dmeEntity);
-                  expect(setCommandResultMock.mock.calls[0][2]).toMatchObject({ open: 'window1' });
+                  expect(setCommandResultMock).not.toHaveBeenCalled();
                   if (hasDelivery) {
-                    if (isResolved) {
-                      expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
-                      expect(deliveryReleaseMock).not.toHaveBeenCalled();
-                      expect(deliveryRejectMock).not.toHaveBeenCalled();
-                    } else {
-                      expect(deliveryAcceptMock).not.toHaveBeenCalled();
-                      expect(deliveryReleaseMock).toHaveBeenCalledTimes(1);
-                      expect(deliveryRejectMock).not.toHaveBeenCalled();
-                    }
+                    expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                    expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                    expect(deliveryRejectMock).toHaveBeenCalledTimes(1);
                   } else {
                     expect(deliveryAcceptMock).not.toHaveBeenCalled();
                     expect(deliveryReleaseMock).not.toHaveBeenCalled();
@@ -780,77 +862,110 @@ describe('/bindigs/amqp10', () => {
         });
       });
 
-      describe.each([
-        [{ body: '{"cmd":{"open":"window1"}}' }],
-        [{ body: { content: Buffer.from('{"cmd":{"open":"window1"}}') } }],
-        [{ body: Buffer.from('{"cmd":{"open":"window1"}}') }],
-        [{ body: '{"unknown":""}' }],
-        [{ body: { content: Buffer.from('{"unknown":""}') } }],
-        [{ body: Buffer.from('{"unknown":""}') }],
-        [{ body: '{"cmdexe":{"open":"window1"}' }],
-        [{ wxyz: '{"cmdexe":{"open":"window1"}}'}],
-        [{ body: '[{"type":"t01","id":"i01"}]' }],
-        [{}],
-      ])('when receives unexpected message (%o)', (rawMessage) => {
-        beforeEach(() => {
-          process.env.QUEUE_DEFS = '[{"type":"t01","id":"i01"}]';
-        });
-
-        afterEach(() => {
-          delete process.env.QUEUE_DEFS;
-        });
-
+      describe('with Orion backend', () => {
         describe.each([
-          ['when context has delivery', 'reject context.delivery', true],
-          ['when context has no delivery', 'nothing to do for delivery', false],
-        ])('%s', (_, desc, hasDelivery) => {
-          it(desc, (done) => {
-            const receiver = new EventEmitter();
-            jest.isolateModules(() => {
-              connOpenMock.mockReturnValue(new Promise((resolve) => {
-                resolve();
-              }));
-              connCreateReceiverMock.mockReturnValue(new Promise((resolve) => {
-                resolve(receiver);
-              }));
-              activateMock.mockReturnValue(new Promise((resolve) => {
-                resolve();
-              }));
-              amqp10 = require('@/bindings/amqp10');
+          [null],
+          ['dm-by-entity'],
+          ['dm-by-entity-type'],
+        ])('when the UPSTREAM_DATA_MODEL is %s', (usdm) => {
+          describe.each([
+            [
+              { body: '{"id": "urn:ngsi-ld:t01:i01", "type": "t01", "temperature": { "value": 25.1, "type": "Float" }}'},
+              '[{"type":"t01","id":"i01","backend":"orion"}]',
+              new QueueDef('t01', 'i01', undefined, undefined, 'orion'),
+            ],
+            [
+              { body: { content: Buffer.from('{"id": "urn:ngsi-ld:t01:i01", "type": "t01", "temperature": { "value": 25.1, "type": "Float" }}')}},
+              '[{"type":"t01","id":"i01","backend":"orion"}]',
+              new QueueDef('t01', 'i01', undefined, undefined, 'orion'),
+            ],
+            [
+              { body: Buffer.from('{"id": "urn:ngsi-ld:t01:i01", "type": "t01", "temperature": { "value": 25.1, "type": "Float" }}')},
+              '[{"type":"t01","id":"i01","backend":"orion"}]',
+              new QueueDef('t01', 'i01', undefined, undefined, 'orion'),
+            ],
+          ])('when receives attrs message (%o)', (rawMessage, queueDefStr, queueDef) => {
+            beforeEach(() => {
+              if (usdm != null) process.env.UPSTREAM_DATA_MODEL = usdm;
+              process.env.QUEUE_DEFS = queueDefStr;
             });
-            const consumer = new amqp10.Consumer();
-            consumer.consume()
-              .then(() => {
-                if (hasDelivery) {
-                  receiver.emit(ReceiverEvents.message, {
-                    message: rawMessage,
-                    delivery: {
-                      accept: deliveryAcceptMock,
-                      release: deliveryReleaseMock,
-                      reject: deliveryRejectMock,
-                    },
+
+            afterEach(() => {
+              if (usdm != null) delete process.env.UPSTREAM_DATA_MODEL;
+              delete process.env.QUEUE_DEFS;
+            });
+
+            describe.each([
+              ['when sendNgsiMessage resolved', 'send attriubtes successfully and accepts context.delivery', true, true],
+              ['when sendNgsiMessage rejected', 'failed sending attritues and releases context.delivery', false, true],
+              ['when sendNgsiMessage resolved but context has no delivery', 'send attributes successfully and nothing to do for delivery', true, false],
+              ['when sendNgsiMessage rejected but context has no delivery', 'failed sending attributes and nothing to do for delivery', false, false],
+            ])('%s', (_, desc, isResolved, hasDelivery) => {
+              it(desc, (done) => {
+                const receiver = new EventEmitter();
+                jest.isolateModules(() => {
+                  connOpenMock.mockReturnValue(new Promise((resolve) => {
+                    resolve();
+                  }));
+                  connCreateReceiverMock.mockReturnValue(new Promise((resolve) => {
+                    resolve(receiver);
+                  }));
+                  activateMock.mockReturnValue(new Promise((resolve) => {
+                    resolve();
+                  }));
+                  sendNgsiMessageMock.mockReturnValue(new Promise((resolve, reject) => {
+                    if (isResolved) {
+                      resolve();
+                    } else {
+                      reject(new Error('sendNgsiMessage rejected'));
+                    }
+                  }));
+                  amqp10 = require('@/bindings/amqp10');
+                });
+                const consumer = new amqp10.Consumer();
+                consumer.consume()
+                  .then(() => {
+                    if (hasDelivery) {
+                      receiver.emit(ReceiverEvents.message, {
+                        message: rawMessage,
+                        delivery: {
+                          accept: deliveryAcceptMock,
+                          release: deliveryReleaseMock,
+                          reject: deliveryRejectMock,
+                        },
+                      });
+                    } else {
+                      receiver.emit(ReceiverEvents.message, { message: rawMessage });
+                    }
+                  })
+                  .catch(() => {
+                    done.fail();
+                  })
+                  .finally(() => {
+                    expect(sendAttributesMock).not.toHaveBeenCalled();
+                    expect(sendNgsiMessageMock).toHaveBeenCalledTimes(1);
+                    expect(setCommandResultMock).not.toHaveBeenCalled();
+                    expect(sendNgsiMessageMock.mock.calls[0][0]).toMatchObject(queueDef);
+                    expect(sendNgsiMessageMock.mock.calls[0][1]).toMatchObject({ id: 'urn:ngsi-ld:t01:i01', type: 't01', temperature: { value: 25.1, type: 'Float' } });
+                    if (hasDelivery) {
+                      if (isResolved) {
+                        expect(deliveryAcceptMock).toHaveBeenCalledTimes(1);
+                        expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                        expect(deliveryRejectMock).not.toHaveBeenCalled();
+                      } else {
+                        expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                        expect(deliveryReleaseMock).toHaveBeenCalledTimes(1);
+                        expect(deliveryRejectMock).not.toHaveBeenCalled();
+                      }
+                    } else {
+                      expect(deliveryAcceptMock).not.toHaveBeenCalled();
+                      expect(deliveryReleaseMock).not.toHaveBeenCalled();
+                      expect(deliveryRejectMock).not.toHaveBeenCalled();
+                    }
+                    done();
                   });
-                } else {
-                  receiver.emit(ReceiverEvents.message, { message: rawMessage });
-                }
-              })
-              .catch(() => {
-                done.fail();
-              })
-              .finally(() => {
-                expect(sendAttributesMock).not.toHaveBeenCalled();
-                expect(setCommandResultMock).not.toHaveBeenCalled();
-                if (hasDelivery) {
-                  expect(deliveryAcceptMock).not.toHaveBeenCalled();
-                  expect(deliveryReleaseMock).not.toHaveBeenCalled();
-                  expect(deliveryRejectMock).toHaveBeenCalledTimes(1);
-                } else {
-                  expect(deliveryAcceptMock).not.toHaveBeenCalled();
-                  expect(deliveryReleaseMock).not.toHaveBeenCalled();
-                  expect(deliveryRejectMock).not.toHaveBeenCalled();
-                }
-                done();
               });
+            });
           });
         });
       });
@@ -902,6 +1017,7 @@ describe('/bindigs/amqp10', () => {
               })
               .finally(() => {
                 expect(sendAttributesMock).not.toHaveBeenCalled();
+                expect(sendNgsiMessageMock).not.toHaveBeenCalled();
                 expect(setCommandResultMock).not.toHaveBeenCalled();
                 if (hasDelivery) {
                   expect(deliveryAcceptMock).not.toHaveBeenCalled();
