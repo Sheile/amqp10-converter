@@ -3,6 +3,24 @@ describe('common', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let common: any;
 
+    it('convert string to BackendType in constructor', () => {
+      jest.isolateModules(() => {
+        common = require('@/common');
+      });
+
+      const patterns = [
+        [common.BackendType.iotagent, common.BackendType.iotagent],
+        [common.BackendType.orion, common.BackendType.orion],
+        ['iotagent', common.BackendType.iotagent],
+        ['orion', common.BackendType.orion],
+      ];
+
+      patterns.forEach(test => {
+        const queueDef = new common.QueueDef('t01', 'i01', undefined, undefined, test[0]);
+        expect(queueDef.backend).toBe(test[1]);
+      })
+    });
+
     describe.each([
       [null, 't01', 'i01', 't01.i01.up', 't01.i01.down'],
       [null, '', '', '..up', '..down'],

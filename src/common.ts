@@ -6,8 +6,14 @@ const upstreamDataModel = process.env.UPSTREAM_DATA_MODEL || 'dm-by-entity';
 const downstreamDataModel = process.env.DOWNSTREAM_DATA_MODEL || 'dm-by-entity';
 const useFullyQualifiedQueueName = (process.env.USE_FULLY_QUALIFIED_QUEUE_NAME == 'true')
 
+export enum BackendType { iotagent, orion }
+
 export class QueueDef {
-  constructor(public type: string, public id: string = '', public fiwareService: string = '', public fiwareServicePath: string = '') {
+  constructor(public type: string, public id: string = '',
+              public fiwareService: string = '', public fiwareServicePath: string = '', public backend: BackendType | string = BackendType.iotagent) {
+
+    if (backend === 'iotagent') this.backend = BackendType.iotagent
+    if (backend === 'orion') this.backend = BackendType.orion
   }
 
   private convertFiwareServicepath(fsp: string): string {
