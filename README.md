@@ -186,22 +186,6 @@ If you want to validate upstream messages, please follow below steps:
 This converter will try to validate an arrived upstream message from the beginning of the given json shcema array. This process will stop at the first successful validation, and in which case the arrived upstream message is judged as VALID. Unfortunately if all validations fail, the arrived upstream message is rejected and all following processes are skipped.  
 Therefore, if a ton of json schemas are given, they can cause the negative impact of performance.
 
-## Convert the message format
-You can convert the upstream messages to your desired format by using a [LiquidJS](https://liquidjs.com/) template.  
-If you want to convert upstream messages, please foloow below steps:
-
-1. create a LiquidJS template.
-1. copy the template to a directory which is accessible from `amqp10-converter`.
-1. set the file path for each queue to an environment variable `MAPPING_PATHS` like below:
-
-    ```
-    $ export MAPPING_PATHS='{"fs.fsp.type0.up":"/opt/templates/upstream.liquid"]}'
-    ```
-1. start `amqp10-converter`.
-
-**CAUTION!**
-The received message will be converted **after** validating it.
-
 ## Requirements
 
 * [node](https://nodejs.org/en/) 12.16 or higher
@@ -209,7 +193,6 @@ The received message will be converted **after** validating it.
 * [express](https://www.npmjs.com/package/express) 4.17.1
 * [rhea-promise](https://www.npmjs.com/package/rhea-promise) 1.0.0
 * [ajv](https://ajv.js.org/) 6.12.3
-* [liquidjs](https://liquidjs.com/) 9.15.0
 * [log4js](https://www.npmjs.com/package/log4js) 6.2.1
 * [iotagent-node-lib](https://www.npmjs.com/package/iotagent-node-lib) 2.12.0
 
@@ -234,7 +217,6 @@ This converter requires some environment variables like below:
 |`FIWARE_SERVICEPATH`|default fiware servicepath of IoT device|YES|/|
 |`QUEUE_DEFS`|the list of queue name definition|YES|[{"type":"type0","id":"id0"}]|
 |`SCHEMA_PATHS`|the list of json schema filepath|NO|{}|
-|`MAPPING_PATHS`|the list of json schema filepath|NO|{}|
 |`UPSTREAM_DATA_MODEL`|if "dm-by-entity", the entity Id is included in the Queue Name. if "dm-by-entity-type", the entity Id is not included in the Queue Name.|NO|dm-by-entity|
 |`USE_FULLY_QUALIFIED_QUEUE_NAME`|if "true", FIWARE-SERVICE and FIWARE-SERVICEPATH are included in the Queue Name|NO||
 |`ID_ATTR_NAME`|the key name of entityId included in the message body|NO|\_\_id|
