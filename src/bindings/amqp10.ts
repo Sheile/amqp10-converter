@@ -1,11 +1,11 @@
 import { readFileSync } from 'fs';
-import { Connection, ConnectionOptions, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
+import { Connection, ConnectionOptions, ConnectionEvents, Receiver, ReceiverOptions, ReceiverEvents, EventContext, Message, SenderOptions } from 'rhea-promise';
 import Ajv from 'ajv';
 import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
 import { sendNgsiMessage } from '@/bindings/orion';
-import { BackendType, QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject } from '@/common';
+import { BackendType, QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject, sleep } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
@@ -15,6 +15,9 @@ const password = process.env.AMQP_PASSWORD;
 const queueDefsStr = process.env.QUEUE_DEFS || '[{"type":"type0","id":"id0"}]';
 const upstreamDataModel = process.env.UPSTREAM_DATA_MODEL || 'dm-by-entity';
 const schemaPathsStr = process.env.SCHEMA_PATHS || '{}';
+const reconnectLimit = parseInt(process.env.RECONNECT_LIMIT || '100');
+const backoffWaitMs = parseFloat(process.env.BACKOFF_WAIT_MS || '100.0');
+const backoffExpBase = Math.max(parseFloat(process.env.BACKOFF_EXP_BASE || '2'), 1.0);
 
 const logger = log4js.getLogger('amqp10');
 
@@ -35,7 +38,8 @@ export class AMQPBase {
       port: port,
       username: username,
       // eslint-disable-next-line @typescript-eslint/camelcase
-      reconnect_limit: 100,
+      idle_time_out: 1000,
+      reconnect: false
     };
     if (useTLS) {
       this.connectionOptions.transport = "tls";
@@ -50,7 +54,7 @@ export class AMQPBase {
       throw new Error(`invalid QUEUE_DEFS (${rawQueueDefs})`);
     }
 
-    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined, backend: string |undefined}) => {
+    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined; backend: string |undefined}) => {
       return new QueueDef(e.type, e.id, e.fiwareService, e.fiwareServicePath, e.backend);
     });
   }
@@ -58,16 +62,60 @@ export class AMQPBase {
   async getConnection(): Promise<Connection> {
     if (!connection) {
       const c = new Connection(this.connectionOptions);
+      this.onConnectionEvent(c);
       await c.open();
-      logger.debug(`connected to ${host}:${port} ${(useTLS) ? 'with TLS': 'without TLS'}`);
+      logger.info(`connected to ${host}:${port} ${(useTLS) ? 'with TLS': 'without TLS'}`);
       connection = c;
     }
     return connection;
   }
 
+  async reconnected(): Promise<void> {
+    logger.info(`reconnected to ${host}:${port} ${(useTLS) ? 'with TLS': 'without TLS'}`);
+  }
+
   async close(): Promise<void> {
     if (connection) logger.info(`close connection: id=${connection.id}`);
     await connection?.close();
+  }
+
+  private onConnectionEvent(c: Connection): void {
+    c.on(ConnectionEvents.connectionOpen, async () => {
+      logger.info(`the connection was opened`);
+    });
+    c.on(ConnectionEvents.connectionClose, async () => {
+      logger.info(`the connection was closed`);
+    });
+    c.on(ConnectionEvents.connectionError, async (event) => {
+      logger.error(`the connection error occured, message=${event.message} error=${event.error}`);
+    });
+    c.on(ConnectionEvents.disconnected, async (event) => {
+      logger.warn(`the connection was disconnected, message=${event.message} error=${event.error}`);
+      await c.close();
+
+      let rc: Connection | undefined;
+      for (let retryCount = 1; retryCount <= reconnectLimit; retryCount++) {
+        await sleep((Math.pow(backoffExpBase, retryCount) + Math.random()) * backoffWaitMs);
+        logger.info(`try reconnecting to ${host}:${port}, retryCount=${retryCount}`);
+
+        rc = new Connection(this.connectionOptions);
+        try {
+          await rc.open();
+          break;
+        } catch (e) {
+          logger.debug(e);
+        }
+      }
+      if (rc && rc.isOpen()){
+        this.onConnectionEvent(rc);
+        connection = rc;
+        await this.reconnected();
+      } else {
+        logger.error(`gave up reconnecting`);
+        await this.close();
+        process.exit(9);
+      }
+    });
   }
 }
 
@@ -108,10 +156,26 @@ export class Consumer extends AMQPBase {
   }
 
   async consume(): Promise<string> {
+    await this.setup();
+    return `${host}:${port}`;
+  }
+
+  async reconnected(): Promise<void> {
+    await this.clean();
+    await this.setup();
+    logger.info('reconnected consumer');
+    await super.reconnected();
+  }
+
+  async close(): Promise<void> {
+    await this.clean();
+    await super.close();
+  }
+
+  private async setup(): Promise<void> {
     const connection = await this.getConnection();
     await this.receive(connection);
     await activate();
-    return `${host}:${port}`;
   }
 
   private async receive(connection: Connection): Promise<void> {
@@ -119,6 +183,15 @@ export class Consumer extends AMQPBase {
     await Promise.all(qd.map(async (queueDef: QueueDef) => {
       await this.createReceiver(connection, queueDef);
     }));
+  }
+
+  private async clean(): Promise<void> {
+    await deactivate();
+    await Promise.all(this.receivers.map(async (r: Receiver) => {
+      logger.info(`close receiver: address=${r.address}`);
+      await r.close();
+    }));
+    this.receivers = [];
   }
 
   private async createReceiver(connection: Connection, queueDef: QueueDef): Promise<void> {
@@ -163,15 +236,6 @@ export class Consumer extends AMQPBase {
     this.receivers.push(receiver);
   }
 
-  async close(): Promise<void> {
-    await deactivate();
-    await Promise.all(this.receivers.map(async (r: Receiver) => {
-      logger.info(`close receiver: address=${r.address}`);
-      await r.close();
-    }));
-    await super.close();
-  }
-
   private messageBody2String(message: Message): string {
     if (typeof message.body === 'string') return message.body;
     if (message.body && message.body.content) return message.body.content.toString("utf-8");
@@ -179,7 +243,7 @@ export class Consumer extends AMQPBase {
     throw new Error('Unknown message format');
   }
 
-  private sendMessageToIotAgent(queueDef: QueueDef, context: EventContext, message: string) {
+  private sendMessageToIotAgent(queueDef: QueueDef, context: EventContext, message: string): void {
     const deviceMessage = new DeviceMessage(message);
     const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
                                                                : new Entity(queueDef.type, queueDef.id);
@@ -212,7 +276,7 @@ export class Consumer extends AMQPBase {
     }
   }
 
-  private sendMessageToOrion(queueDef: QueueDef, context: EventContext, message: string) {
+  private sendMessageToOrion(queueDef: QueueDef, context: EventContext, message: string): void {
     const rawJson = JSON.parse(message);
     sendNgsiMessage(queueDef, rawJson)
       .then(() => {

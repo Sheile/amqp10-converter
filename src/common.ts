@@ -113,3 +113,5 @@ export interface DeviceType {
   commands: JsonType;
   static_attributes: JsonType;
 }
+
+export const sleep = (msec: number): Promise<void> => new Promise(resolve => setTimeout(resolve, msec));

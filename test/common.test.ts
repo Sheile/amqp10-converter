@@ -331,4 +331,29 @@ describe('common', () => {
       });
     })
   });
+
+  describe('sleep', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let common: any;
+    beforeEach(() => {
+      jest.isolateModules(() => {
+        common = require('@/common');
+      })
+    });
+
+    it('waits given mill sec', async (done) => {
+      const timeout = 2;
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+      await common.sleep(timeout);
+
+      expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+      expect(setTimeoutSpy.mock.calls[0][1]).toBe(timeout);
+
+      setTimeoutSpy.mockReset();
+      setTimeoutSpy.mockRestore();
+      done();
+    })
+  });
+
 });

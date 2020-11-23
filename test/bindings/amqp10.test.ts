@@ -1,16 +1,19 @@
 import { writeFileSync } from 'fs';
 import { EventEmitter } from 'events';
-import { Connection, ConnectionOptions, ReceiverEvents } from 'rhea-promise';
+import { Connection, ConnectionEvents, ConnectionOptions, ReceiverEvents } from 'rhea-promise';
 import { fileSync } from 'tmp-promise';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
 import { sendNgsiMessage } from '@/bindings/orion';
 import { QueueDef, Entity } from '@/common';
+import * as common from '@/common';
 
 jest.mock('rhea-promise');
 const ConnectionMock = Connection as unknown as jest.Mock;
 const connOpenMock = jest.fn();
 const connCloseMock = jest.fn();
+const connOnMock = jest.fn();
+const connIsOpenMock = jest.fn();
 const connCreateReceiverMock = jest.fn();
 const connCreateAwaitableSenderMock = jest.fn();
 const deliveryAcceptMock = jest.fn();
@@ -67,6 +70,8 @@ describe('/bindigs/amqp10', () => {
           return {
             open: connOpenMock,
             close: connCloseMock,
+            on: connOnMock,
+            isOpen: connIsOpenMock,
           }
         });
       });
@@ -250,6 +255,173 @@ describe('/bindigs/amqp10', () => {
             });
         });
       });
+
+      describe('when ConnectionEvents is received', () => {
+        it('registered function can be fireed', (done) => {
+          jest.isolateModules(() => {
+            connOpenMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            amqp10 = require('@/bindings/amqp10');
+          });
+          const base = new amqp10.AMQPBase();
+
+          base.getConnection()
+            .then(async () => {
+              expect(connOnMock).toHaveBeenCalledTimes(4);
+              expect(connOnMock.mock.calls[0][0]).toBe(ConnectionEvents.connectionOpen);
+              expect(connOnMock.mock.calls[0][1]).toBeInstanceOf(Function);
+              await connOnMock.mock.calls[0][1]();
+              expect(connOnMock.mock.calls[1][0]).toBe(ConnectionEvents.connectionClose);
+              expect(connOnMock.mock.calls[1][1]).toBeInstanceOf(Function);
+              await connOnMock.mock.calls[1][1]();
+              expect(connOnMock.mock.calls[2][0]).toBe(ConnectionEvents.connectionError);
+              expect(connOnMock.mock.calls[2][1]).toBeInstanceOf(Function);
+              await connOnMock.mock.calls[2][1]({
+                message: 'test message',
+                error: new Error('test error'),
+              });
+              expect(connOnMock.mock.calls[3][0]).toBe(ConnectionEvents.disconnected);
+              expect(connOnMock.mock.calls[3][1]).toBeInstanceOf(Function);
+            })
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              done();
+            });
+        });
+      });
+
+      const reconnectLimit = 3;
+      describe.each([
+        [0],
+        [1],
+        [3],
+      ])('when ConnectionEvents.disconnected is received', (rejectCount) => {
+        beforeEach(() => {
+          process.env.RECONNECT_LIMIT = String(reconnectLimit);
+        });
+
+        afterEach(() => {
+          delete process.env.RECONNECT_LIMIT;
+        });
+
+        it(rejectCount < reconnectLimit ? 'reconnects when resolving connection.open' : 'can not reconnect when rejecting connection.open', (done) => {
+          jest.isolateModules(() => {
+            let num = 0;
+            connOpenMock.mockImplementation(() => {
+              return new Promise((resolve, reject) => {
+                num++;
+                if (num != 1 && num <= rejectCount + 1) {
+                  reject(new Error('rejected'));
+                } else {
+                  resolve();
+                }
+              });
+            });
+            connCloseMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            if (rejectCount < reconnectLimit) {
+              connIsOpenMock.mockReturnValue(true);
+            } else {
+              connIsOpenMock.mockReturnValue(false);
+            }
+            amqp10 = require('@/bindings/amqp10');
+          });
+          const base = new amqp10.AMQPBase();
+          const sleepSpy = jest.spyOn(common, 'sleep').mockImplementation((): Promise<void> => {
+            return new Promise((resolve) => {
+              resolve();
+            });
+          });
+          const reconnectSpy = jest.spyOn(base, 'reconnected').mockImplementation((): Promise<void> => {
+            return new Promise((resolve) => {
+              resolve();
+            });
+          });
+          const closeSpy = jest.spyOn(base, 'close').mockImplementation((): Promise<void> => {
+            return new Promise((resolve) => {
+              resolve();
+            });
+          });
+          const exitSpy = jest.spyOn(process, 'exit').mockImplementation((): never => {
+            throw new Error();
+          });
+
+          base.getConnection()
+            .then(() => {
+              expect(connOnMock).toHaveBeenCalledTimes(4);
+              expect(connCloseMock).not.toHaveBeenCalled();
+            })
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              connOnMock.mock.calls[3][1]({
+                message: 'test message',
+                error: new Error('test error'),
+              })
+              .then(() => {
+                // nothing to do
+              })
+              .catch(() => {
+                // nothing to do
+              })
+              .finally(() => {
+                expect(connCloseMock).toHaveBeenCalledTimes(1);
+                if (rejectCount < reconnectLimit) {
+                  expect(sleepSpy).toHaveBeenCalledTimes(rejectCount + 1);
+                  expect(reconnectSpy).toHaveBeenCalledTimes(1);
+                  expect(closeSpy).not.toHaveBeenCalled();
+                  // expect(exitSpy).not.toHaveBeenCalled();
+                } else {
+                  expect(sleepSpy).toHaveBeenCalledTimes(reconnectLimit);
+                  expect(reconnectSpy).not.toHaveBeenCalled();
+                  expect(closeSpy).toHaveBeenCalledTimes(1);
+                  // expect(exitSpy).toHaveBeenCalledTimes(1);
+                }
+                sleepSpy.mockReset();
+                sleepSpy.mockRestore();
+                reconnectSpy.mockReset();
+                reconnectSpy.mockRestore();
+                closeSpy.mockReset();
+                closeSpy.mockRestore();
+                exitSpy.mockReset();
+                exitSpy.mockRestore();
+                done();
+              });
+            });
+        });
+      });
+
+      describe('when reconnect method is called', () => {
+        it('does nothing', (done) => {
+          jest.isolateModules(() => {
+            connOpenMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            amqp10 = require('@/bindings/amqp10');
+          });
+          const base = new amqp10.AMQPBase();
+
+          base.getConnection()
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              base.reconnected()
+                .catch(() => {
+                  done.fail();
+                })
+                .finally(() => {
+                  done();
+                });
+            });
+        });
+      });
+
     });
 
     describe('Consumer', () => {
@@ -258,6 +430,8 @@ describe('/bindigs/amqp10', () => {
           return {
             open: connOpenMock,
             close: connCloseMock,
+            on: connOnMock,
+            isOpen: connIsOpenMock,
             createReceiver: connCreateReceiverMock,
           }
         });
@@ -1180,6 +1354,83 @@ describe('/bindigs/amqp10', () => {
         });
       });
 
+      describe('when reconnect method is called', () => {
+        it('clean up self and setup receiver agein', (done) => {
+          const receiver = {
+            on: jest.fn(),
+            close: receiverCloseMock,
+          };
+          jest.isolateModules(() => {
+            connOpenMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            connCloseMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            connCreateReceiverMock.mockReturnValue(new Promise((resolve) => {
+              resolve(receiver);
+            }));
+            activateMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            deactivateMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            receiverCloseMock.mockReturnValue(new Promise((resolve) => {
+              resolve();
+            }));
+            amqp10 = require('@/bindings/amqp10');
+          });
+          const consumer = new amqp10.Consumer();
+          consumer.consume()
+            .then((url: string) => {
+              const u = `${(amqpHost !== null) ? amqpHost : 'localhost'}:${(amqpPort !== null) ? amqpPort : '5672'}`
+              expect(url).toBe(u);
+            })
+            .catch(() => {
+              done.fail();
+            })
+            .finally(() => {
+              expect(ConnectionMock).toHaveBeenCalledTimes(1);
+              expect(connOpenMock).toHaveBeenCalledTimes(1);
+              expect(connCreateReceiverMock).toHaveBeenCalledTimes(1);
+              expect(connCreateReceiverMock.mock.calls[0][0]).toMatchObject({
+                source: {
+                  address: 'type0.id0.up',
+                },
+                autoaccept: false,
+              });
+              expect(activateMock).toHaveBeenCalledTimes(1);
+              expect(connCloseMock).not.toHaveBeenCalled();
+              expect(deactivateMock).not.toHaveBeenCalled();
+              expect(receiverCloseMock).not.toHaveBeenCalled();
+
+              consumer.reconnected()
+                .catch(() => {
+                  done.fail();
+                })
+                .finally(() => {
+                  process.nextTick(() => {
+                    expect(ConnectionMock).toHaveBeenCalledTimes(1);
+                    expect(connOpenMock).toHaveBeenCalledTimes(1);
+                    expect(deactivateMock).toHaveBeenCalledTimes(1);
+                    expect(receiverCloseMock).toHaveBeenCalledTimes(1);
+                    expect(connCreateReceiverMock).toHaveBeenCalledTimes(2);
+                    expect(connCreateReceiverMock.mock.calls[1][0]).toMatchObject({
+                      source: {
+                        address: 'type0.id0.up',
+                      },
+                      autoaccept: false,
+                    });
+                    expect(activateMock).toHaveBeenCalledTimes(2);
+                    expect(connCloseMock).not.toHaveBeenCalled();
+                    done();
+                  });
+                });
+            });
+        });
+      });
+
       describe('validator', () => {
 
         const attrSchema = {
@@ -1770,6 +2021,8 @@ describe('/bindigs/amqp10', () => {
           return {
             open: connOpenMock,
             close: connCloseMock,
+            on: connOnMock,
+            isOpen: connIsOpenMock,
             createAwaitableSender: connCreateAwaitableSenderMock,
           }
         });
