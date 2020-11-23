@@ -362,7 +362,14 @@ describe('/bindigs/amqp10', () => {
               connOnMock.mock.calls[3][1]({
                 message: 'test message',
                 error: new Error('test error'),
-              }).finally(() => {
+              })
+              .then(() => {
+                // nothing to do
+              })
+              .catch(() => {
+                // nothing to do
+              })
+              .finally(() => {
                 expect(connCloseMock).toHaveBeenCalledTimes(1);
                 if (rejectCount < reconnectLimit) {
                   expect(sleepSpy).toHaveBeenCalledTimes(rejectCount + 1);
