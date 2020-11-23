@@ -56,7 +56,7 @@ export class AMQPBase {
       throw new Error(`invalid QUEUE_DEFS (${rawQueueDefs})`);
     }
 
-    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined, backend: string |undefined}) => {
+    this._queueDefs = rawQueueDefs.map((e: {type: string; id: string | undefined; fiwareService: string | undefined; fiwareServicePath: string | undefined; backend: string |undefined}) => {
       return new QueueDef(e.type, e.id, e.fiwareService, e.fiwareServicePath, e.backend);
     });
   }
@@ -245,7 +245,7 @@ export class Consumer extends AMQPBase {
     throw new Error('Unknown message format');
   }
 
-  private sendMessageToIotAgent(queueDef: QueueDef, context: EventContext, message: string) {
+  private sendMessageToIotAgent(queueDef: QueueDef, context: EventContext, message: string): void {
     const deviceMessage = new DeviceMessage(message);
     const entity = (upstreamDataModel === 'dm-by-entity-type') ? Entity.fromData(queueDef, deviceMessage.data)
                                                                : new Entity(queueDef.type, queueDef.id);
@@ -278,7 +278,7 @@ export class Consumer extends AMQPBase {
     }
   }
 
-  private sendMessageToOrion(queueDef: QueueDef, context: EventContext, message: string) {
+  private sendMessageToOrion(queueDef: QueueDef, context: EventContext, message: string): void {
     const rawJson = JSON.parse(message);
     sendNgsiMessage(queueDef, rawJson)
       .then(() => {
