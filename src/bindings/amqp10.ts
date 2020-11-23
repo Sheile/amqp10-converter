@@ -5,7 +5,7 @@ import log4js from 'log4js';
 import { sendAttributes } from '@/bindings/iotagent-json';
 import { activate, setCommandResult, deactivate } from '@/bindings/iotagent-lib';
 import { sendNgsiMessage } from '@/bindings/orion';
-import { BackendType, QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject } from '@/common';
+import { BackendType, QueueDef, Entity, DeviceMessage, MessageType, JsonType, isObject, sleep } from '@/common';
 
 const host = process.env.AMQP_HOST || 'localhost';
 const port = parseInt(process.env.AMQP_PORT || '5672');
@@ -22,8 +22,6 @@ const backoffExpBase = Math.max(parseFloat(process.env.BACKOFF_EXP_BASE || '2'),
 const logger = log4js.getLogger('amqp10');
 
 let connection: Connection | undefined;
-
-const sleep = (msec: number): Promise<void> => new Promise(resolve => setTimeout(resolve, msec));
 
 export class AMQPBase {
   private connectionOptions: ConnectionOptions;
@@ -114,7 +112,7 @@ export class AMQPBase {
         await this.reconnected();
       } else {
         logger.error(`gave up reconnecting`);
-        this.close();
+        await this.close();
         process.exit(9);
       }
     });
