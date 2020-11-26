@@ -12,6 +12,7 @@ const port = parseInt(process.env.AMQP_PORT || '5672');
 const username = process.env.AMQP_USERNAME || 'ANONYMOUS';
 const useTLS = (process.env.AMQP_USE_TLS == 'true');
 const password = process.env.AMQP_PASSWORD;
+const idleTimeOut = parseInt(process.env.IDLE_TIME_OUT || '10000')
 const queueDefsStr = process.env.QUEUE_DEFS || '[{"type":"type0","id":"id0"}]';
 const upstreamDataModel = process.env.UPSTREAM_DATA_MODEL || 'dm-by-entity';
 const schemaPathsStr = process.env.SCHEMA_PATHS || '{}';
@@ -38,7 +39,7 @@ export class AMQPBase {
       port: port,
       username: username,
       // eslint-disable-next-line @typescript-eslint/camelcase
-      idle_time_out: 1000,
+      idle_time_out: idleTimeOut,
       reconnect: false
     };
     if (useTLS) {
@@ -47,6 +48,7 @@ export class AMQPBase {
     if (password) {
       this.connectionOptions.password = password;
     }
+    logger.debug(`connectionOptions=${JSON.stringify(this.connectionOptions)}`);
 
     const rawQueueDefs = JSON.parse(queueDefsStr);
     if (!QueueDef.isQueueDefs(rawQueueDefs)) {
