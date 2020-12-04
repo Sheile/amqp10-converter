@@ -25,11 +25,9 @@ An example is available to try this converter using docker-compose. Please see [
 
 ## Naming and Formatting
 ### Endpoint
-When you use iotagent backend, The endpoint listening the POST request from IoTAgent JSON is like this: `http://<host>:<port>/<basePath>/cmd/<entityType>/<entityId>`.
+The endpoint listening the POST request from IoTAgent JSON is like this: `http://<host>:<port>/<basePath>/cmd/<entityType>/<entityId>`.
 
 The default value of `<basePath>` is "/amqp10", but you can change this by using `BASE_PATH` environment variable if you want.
-
-When you use orion backend, The endpoint listening the POST request from Orion is like this: `http://<host>:<port>/<ngsiVersion>/entities` and the PATCH request from Orion is like this: `http://<host>:<port>/<ngsiVersion>/entities/<entityId>`.
 
 ### Queue Name
 This converter requires two or more Queues: the one is **Upstream Queue** and the other is **Downstream Queue**.
